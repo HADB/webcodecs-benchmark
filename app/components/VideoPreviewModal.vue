@@ -24,6 +24,13 @@ const isPreviewPlaying = ref(false)
 const previewProgress = ref(0)
 const previewError = ref('')
 
+// 当组件挂载时自动开始预览
+onMounted(() => {
+  nextTick(() => {
+    startPreview()
+  })
+})
+
 // 当组件卸载时停止预览
 onUnmounted(() => {
   stopPreview()
@@ -174,49 +181,6 @@ function stopPreview() {
     ctx.clearRect(0, 0, previewCanvas.value.width, previewCanvas.value.height)
   }
 }
-
-// 下载视频
-async function downloadVideo() {
-  if (!props.videoData) {
-    const toast = useToast()
-    toast.add({
-      title: '下载失败',
-      description: '未找到视频数据',
-      color: 'error',
-    })
-    return
-  }
-
-  try {
-    // 创建一个简单的 WebM 容器
-    const chunks = props.videoData.chunks
-    const videoBlob = new Blob(
-      chunks.map((chunk) => new Uint8Array(chunk.byteLength).fill(0)), // 这是简化版本
-      { type: 'video/webm' },
-    )
-
-    const url = URL.createObjectURL(videoBlob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `video_${props.codec.replace(/[^a-z0-9]/gi, '_')}.webm`
-    a.click()
-    URL.revokeObjectURL(url)
-
-    const toast = useToast()
-    toast.add({
-      title: '视频下载已开始',
-      color: 'success',
-    })
-  }
-  catch (error: any) {
-    const toast = useToast()
-    toast.add({
-      title: '下载视频失败',
-      description: error.message,
-      color: 'error',
-    })
-  }
-}
 </script>
 
 <template>
@@ -232,18 +196,23 @@ async function downloadVideo() {
           />
         </div>
 
+        <!-- 进度条 -->
+        <div v-if="isPreviewPlaying || previewProgress > 0" class="space-y-2">
+          <UProgress v-model="previewProgress" :max="100" />
+        </div>
+
         <!-- 控制按钮 -->
         <div class="flex justify-center gap-3">
           <UButton
-            v-if="!isPreviewPlaying"
+            v-if="!isPreviewPlaying && previewProgress === 0"
             color="primary"
             icon="i-heroicons-play"
             @click="startPreview"
           >
-            开始预览
+            重新预览
           </UButton>
           <UButton
-            v-else
+            v-else-if="isPreviewPlaying"
             color="error"
             icon="i-heroicons-stop"
             @click="stopPreview"
@@ -251,22 +220,13 @@ async function downloadVideo() {
             停止预览
           </UButton>
           <UButton
-            color="success"
-            icon="i-heroicons-arrow-down-tray"
-            variant="outline"
-            @click="downloadVideo"
+            v-else
+            color="primary"
+            icon="i-heroicons-arrow-path"
+            @click="startPreview"
           >
-            下载视频
+            重新预览
           </UButton>
-        </div>
-
-        <!-- 进度条 -->
-        <div v-if="isPreviewPlaying || previewProgress > 0" class="space-y-2">
-          <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-            <span>播放进度</span>
-            <span>{{ Math.round(previewProgress) }}%</span>
-          </div>
-          <UProgress :value="previewProgress" :max="100" />
         </div>
 
         <!-- 错误信息 -->
