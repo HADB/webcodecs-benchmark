@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { IClip } from '@webav/av-cliper'
+import { Combinator, OffscreenSprite } from '@webav/av-cliper'
 import {
   BufferTarget,
   CanvasSource,
@@ -9,15 +11,14 @@ import {
 } from 'mediabunny'
 
 interface BenchmarkResult {
-  codec: string
-  operation: string
+  name: string
+  description: string
   totalFrames: number
   totalTime: number
   fps: number
   success: boolean
   error?: string
-  fileSize?: number // 添加文件大小字段（用于 mediabunny）
-  actualCodec?: string // 添加实际使用的编码器字段（用于 mediabunny）
+  fileSize?: number
 }
 
 interface TestConfig {
@@ -34,14 +35,14 @@ const isRunning = ref(false)
 const results = ref<BenchmarkResult[]>([])
 const currentTest = ref('')
 const progress = ref(0)
-const encodedVideos = ref<Map<string, { chunks: EncodedVideoChunk[], config: VideoEncoderConfig, decoderConfig?: VideoDecoderConfig, blob?: Blob }>>(new Map())
+const encodedVideos = ref<Map<string, { config: VideoEncoderConfig, decoderConfig?: VideoDecoderConfig, blob?: Blob }>>(new Map())
 
 const testConfig = ref<TestConfig>({
   width: 1920,
   height: 1080,
   framerate: 30,
-  bitrate: 8000000,
-  keyFrameInterval: 30,
+  bitrate: 4000000,
+  keyFrameInterval: 3,
   totalFrames: 300,
 })
 
@@ -50,7 +51,7 @@ const userAgent = ref('')
 const overlay = useOverlay()
 
 // 分辨率选项
-const resolutionOptions = ref(['1920x1080', '1280x720'])
+const resolutionOptions = ref(['1920x1080', '3840x2160'])
 const selectedResolution = ref('1920x1080')
 
 // 编码器选择选项
@@ -62,9 +63,14 @@ function updateResolution(value: string) {
     testConfig.value.width = 1920
     testConfig.value.height = 1080
   }
-  else if (value === '1280x720') {
-    testConfig.value.width = 1280
-    testConfig.value.height = 720
+  else if (value === '3840x2160') {
+    testConfig.value.width = 3840
+    testConfig.value.height = 2160
+  }
+
+  // 重新检查编解码器支持，因为4K分辨率可能不支持某些编解码器
+  if (isSupported.value) {
+    checkSupportedCodecs()
   }
 }
 
@@ -118,8 +124,11 @@ async function checkSupportedCodecs() {
   }
 
   supportedCodecs.value = supported
-  // 默认选择第一个支持的编码器
-  selectedCodec.value = supported[0] || ''
+
+  // 如果当前选择的编解码器不支持新分辨率，选择第一个支持的
+  if (!supported.includes(selectedCodec.value)) {
+    selectedCodec.value = supported[0] || ''
+  }
 }
 
 // 将 WebCodecs 编码器名称映射到 mediabunny 支持的编码器名称
@@ -142,36 +151,89 @@ function mapToMediabunnyCodec(webCodecsCodec: string): 'avc' | 'hevc' | 'vp8' | 
   return null
 }
 
-// 优化：创建可重用的 canvas
-let reusableCanvas: OffscreenCanvas | null = null
-let reusableCtx: OffscreenCanvasRenderingContext2D | null = null
+// 通用的测试帧生成工具类
+class TestFrameGenerator {
+  private reusableCanvas: OffscreenCanvas | null = null
+  private reusableCtx: OffscreenCanvasRenderingContext2D | null = null
 
-function generateTestFrame(frameNumber: number, width: number, height: number): VideoFrame {
-  // 重用 canvas，避免频繁创建
-  if (!reusableCanvas || reusableCanvas.width !== width || reusableCanvas.height !== height) {
-    reusableCanvas = new OffscreenCanvas(width, height)
-    reusableCtx = reusableCanvas.getContext('2d', { alpha: false })!
+  /**
+   * 生成随机颜色
+   */
+  private generateRandomColor(): string {
+    const r = Math.floor(Math.random() * 256)
+    const g = Math.floor(Math.random() * 256)
+    const b = Math.floor(Math.random() * 256)
+    return `rgb(${r}, ${g}, ${b})`
   }
 
-  // 直接生成随机颜色
-  const r = Math.floor(Math.random() * 256)
-  const g = Math.floor(Math.random() * 256)
-  const b = Math.floor(Math.random() * 256)
-  const color = `rgb(${r}, ${g}, ${b})`
+  /**
+   * 获取或创建画布
+   */
+  private getCanvas(width: number, height: number): { canvas: OffscreenCanvas, ctx: OffscreenCanvasRenderingContext2D } {
+    // 重用 canvas，避免频繁创建
+    if (!this.reusableCanvas || this.reusableCanvas.width !== width || this.reusableCanvas.height !== height) {
+      this.reusableCanvas = new OffscreenCanvas(width, height)
+      this.reusableCtx = this.reusableCanvas.getContext('2d', { alpha: false })!
+    }
+    return { canvas: this.reusableCanvas, ctx: this.reusableCtx! }
+  }
 
-  // 填充整个画布为随机纯色
-  reusableCtx!.fillStyle = color
-  reusableCtx!.fillRect(0, 0, width, height)
+  /**
+   * 创建用于 WebCodecs 的 VideoFrame
+   */
+  createVideoFrame(frameNumber: number, width: number, height: number, framerate: number): VideoFrame {
+    const { canvas, ctx } = this.getCanvas(width, height)
 
-  return new VideoFrame(reusableCanvas, {
-    timestamp: frameNumber * (1000000 / testConfig.value.framerate), // 微秒
-  })
+    this.drawFrameContent(ctx, width, height, frameNumber, framerate)
+
+    return new VideoFrame(canvas, {
+      timestamp: frameNumber * (1000000 / framerate), // 微秒
+    })
+  }
+
+  /**
+   * 在已有的画布上绘制随机背景和文本信息（用于 mediabunny）
+   */
+  drawFrameContent(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number, frameNumber: number, framerate: number): void {
+    // 绘制随机背景
+    ctx.fillStyle = this.generateRandomColor()
+    ctx.fillRect(0, 0, width, height)
+
+    // 添加文本信息
+    const time = frameNumber * (1000000 / framerate)
+    ctx.fillStyle = 'white'
+    ctx.font = '24px Arial'
+    ctx.fillText(`Frame: ${frameNumber}`, 50, 50)
+    ctx.fillText(`Time: ${(time / 1000000).toFixed(2)}s`, 50, 80)
+  }
+
+  /**
+   * 创建新的画布并绘制随机背景和文本（用于 WebAV）
+   */
+  createCanvasWithContent(width: number, height: number, frameNumber: number, time: number): OffscreenCanvas {
+    const canvas = new OffscreenCanvas(width, height)
+    const ctx = canvas.getContext('2d', { alpha: false })!
+    this.drawFrameContent(ctx, width, height, frameNumber, time)
+
+    return canvas
+  }
+
+  /**
+   * 清理资源
+   */
+  destroy(): void {
+    this.reusableCanvas = null
+    this.reusableCtx = null
+  }
 }
+
+// 创建全局的测试帧生成器实例
+const testFrameGenerator = new TestFrameGenerator()
 
 async function runEncodingBenchmark(codec: string, currentTestIndex: number, totalTests: number): Promise<BenchmarkResult> {
   const result: BenchmarkResult = {
-    codec,
-    operation: 'encoding',
+    name: 'webcodecs-encoding',
+    description: 'WebCodecs 纯编码',
     totalFrames: testConfig.value.totalFrames,
     totalTime: 0,
     fps: 0,
@@ -193,6 +255,7 @@ async function runEncodingBenchmark(codec: string, currentTestIndex: number, tot
     const encoder = new VideoEncoder({
       output: () => {
         encodedFrames++
+
         // 计算当前测试在所有测试中的进度
         const testProgress = encodedFrames / testConfig.value.totalFrames
         const overallProgress = (currentTestIndex + testProgress) / totalTests
@@ -203,6 +266,10 @@ async function runEncodingBenchmark(codec: string, currentTestIndex: number, tot
           result.totalTime = endTime - startTime
           result.fps = (testConfig.value.totalFrames * 1000) / result.totalTime
           result.success = true
+
+          encodedVideos.value.set(result.name, {
+            config: encoderConfig,
+          })
 
           resolve(result)
         }
@@ -216,18 +283,87 @@ async function runEncodingBenchmark(codec: string, currentTestIndex: number, tot
     try {
       encoder.configure(encoderConfig)
 
-      // 直接编码所有帧，让编码器自己处理队列
-      for (let i = 0; i < testConfig.value.totalFrames; i++) {
-        const frame = generateTestFrame(i, testConfig.value.width, testConfig.value.height)
+      // 优化：为4K分辨率使用更小的批次，避免内存峰值和主线程阻塞
+      const is4K = testConfig.value.width >= 3840 || testConfig.value.height >= 2160
+      const batchSize = is4K ? 5 : 10 // 4K使用更小的批次
+      let currentBatch = 0
 
-        encoder.encode(frame, {
-          keyFrame: i % testConfig.value.keyFrameInterval === 0,
-        })
+      const encodeBatch = async () => {
+        // 检查编码器状态
+        if (encoder.state !== 'configured') {
+          result.error = `Encoder is in invalid state: ${encoder.state}`
+          resolve(result)
+          return
+        }
 
-        frame.close()
+        const startIndex = currentBatch * batchSize
+        const endIndex = Math.min(startIndex + batchSize, testConfig.value.totalFrames)
+
+        for (let i = startIndex; i < endIndex; i++) {
+          // 检查编码器状态和队列大小，避免过度堆积
+          while (encoder.state === 'configured' && encoder.encodeQueueSize > (is4K ? 3 : 5)) {
+            await new Promise((resolve) => setTimeout(resolve, 1))
+          }
+
+          // 再次检查编码器状态
+          if (encoder.state !== 'configured') {
+            result.error = `Encoder closed unexpectedly during encoding at frame ${i}`
+            resolve(result)
+            return
+          }
+
+          const frame = testFrameGenerator.createVideoFrame(i, testConfig.value.width, testConfig.value.height, testConfig.value.framerate)
+
+          try {
+            encoder.encode(frame, {
+              keyFrame: i % (testConfig.value.keyFrameInterval * testConfig.value.framerate) === 0,
+            })
+          }
+          catch (encodeError) {
+            frame.close()
+            result.error = `Encoding failed at frame ${i}: ${(encodeError as Error).message}`
+            resolve(result)
+            return
+          }
+
+          frame.close()
+        }
+
+        currentBatch++
+
+        if (endIndex < testConfig.value.totalFrames) {
+          // 为4K使用更长的延迟让出主线程控制权
+          setTimeout(encodeBatch, is4K ? 5 : 0)
+        }
+        else {
+          // 所有帧都已提交，开始 flush
+          if (encoder.state === 'configured') {
+            encoder.flush()
+          }
+          else {
+            result.error = `Cannot flush encoder in state: ${encoder.state}`
+            resolve(result)
+          }
+        }
       }
 
-      encoder.flush()
+      // 等待配置完成后开始编码
+      const startEncodingWhenReady = () => {
+        if (encoder.state === 'configured') {
+          encodeBatch()
+        }
+        else if (encoder.state === 'closed') {
+          result.error = `Encoder configuration failed for ${codec} at ${testConfig.value.width}x${testConfig.value.height}. This resolution might not be supported.`
+          resolve(result)
+        }
+        else {
+          // 继续等待配置完成
+          setTimeout(startEncodingWhenReady, 10)
+        }
+      }
+
+      // 开始编码流程
+      startEncodingWhenReady()
     }
     catch (error) {
       result.error = (error as Error).message
@@ -238,8 +374,8 @@ async function runEncodingBenchmark(codec: string, currentTestIndex: number, tot
 
 async function runMediaBunnyBenchmark(currentTestIndex: number, totalTests: number, selectedWebCodecsCodec: string): Promise<BenchmarkResult> {
   const result: BenchmarkResult = {
-    codec: 'mediabunny',
-    operation: 'mediabunny-generation',
+    name: 'mediabunny',
+    description: 'MediaBunny 编码+封装',
     totalFrames: testConfig.value.totalFrames,
     totalTime: 0,
     fps: 0,
@@ -317,13 +453,8 @@ async function runMediaBunnyBenchmark(currentTestIndex: number, totalTests: numb
       // 清除画布
       renderCtx.clearRect(0, 0, renderCanvas.width, renderCanvas.height)
 
-      // 生成随机纯色背景（参考 baseline/main.py 的方式）
-      const r = Math.floor(Math.random() * 256)
-      const g = Math.floor(Math.random() * 256)
-      const b = Math.floor(Math.random() * 256)
-
-      renderCtx.fillStyle = `rgb(${r}, ${g}, ${b})`
-      renderCtx.fillRect(0, 0, renderCanvas.width, renderCanvas.height)
+      // 使用统一的测试帧生成器绘制完整内容（背景 + 文本）
+      testFrameGenerator.drawFrameContent(renderCtx, renderCanvas.width, renderCanvas.height, currentFrame, frameRate)
 
       // 更新进度
       const testProgress = currentFrame / totalFrames
@@ -344,7 +475,6 @@ async function runMediaBunnyBenchmark(currentTestIndex: number, totalTests: numb
     result.totalTime = endTime - startTime
     result.fps = (totalFrames * 1000) / result.totalTime
     result.success = true
-    result.actualCodec = videoCodec // 保存实际使用的编码器
 
     // 保存生成的视频文件大小
     if (target.buffer) {
@@ -353,11 +483,157 @@ async function runMediaBunnyBenchmark(currentTestIndex: number, totalTests: numb
       // 保存视频数据用于下载
       const videoBlob = new Blob([target.buffer], { type: format.mimeType })
       encodedVideos.value.set('mediabunny', {
-        chunks: [], // mediabunny 不使用 chunks
         config: {} as VideoEncoderConfig,
         blob: videoBlob, // 直接保存 blob
       })
     }
+  }
+  catch (error) {
+    result.error = (error as Error).message
+  }
+
+  return result
+}
+
+// 创建自定义的 WebAV Clip 类用于生成测试内容
+class TestVideoClip implements IClip {
+  #width: number
+  #height: number
+  #duration: number
+  #framerate: number
+  #reusableCanvas: OffscreenCanvas | null = null
+  #reusableCtx: OffscreenCanvasRenderingContext2D | null = null
+
+  meta: { width: number, height: number, duration: number }
+  ready: Promise<{ width: number, height: number, duration: number }>
+
+  constructor(width: number, height: number, duration: number, framerate: number) {
+    this.#width = width
+    this.#height = height
+    this.#duration = duration
+    this.#framerate = framerate
+
+    this.meta = { width, height, duration }
+    this.ready = Promise.resolve(this.meta)
+  }
+
+  /**
+   * 获取或创建画布，复用避免频繁创建
+   */
+  #getCanvas(): { canvas: OffscreenCanvas, ctx: OffscreenCanvasRenderingContext2D } {
+    if (!this.#reusableCanvas || this.#reusableCanvas.width !== this.#width || this.#reusableCanvas.height !== this.#height) {
+      this.#reusableCanvas = new OffscreenCanvas(this.#width, this.#height)
+      this.#reusableCtx = this.#reusableCanvas.getContext('2d', { alpha: false })!
+    }
+    return { canvas: this.#reusableCanvas, ctx: this.#reusableCtx! }
+  }
+
+  async tick(time: number): Promise<{
+    video?: VideoFrame
+    audio?: Float32Array[]
+    state: 'success' | 'done'
+  }> {
+    if (time >= this.#duration) {
+      return { state: 'done' }
+    }
+
+    // 使用复用的画布避免频繁创建
+    const frameNumber = Math.floor(time / (1000000 / this.#framerate))
+    const { canvas, ctx } = this.#getCanvas()
+
+    // 使用统一的测试帧生成器绘制内容
+    testFrameGenerator.drawFrameContent(ctx, this.#width, this.#height, frameNumber, this.#framerate)
+
+    // 创建 VideoFrame
+    const videoFrame = new VideoFrame(canvas, {
+      timestamp: time,
+      duration: 1000000 / this.#framerate, // 微秒为单位
+    })
+
+    return {
+      video: videoFrame,
+      state: 'success',
+    }
+  }
+
+  async split(time: number) {
+    const preClip = new TestVideoClip(this.#width, this.#height, time, this.#framerate)
+    const postClip = new TestVideoClip(this.#width, this.#height, this.#duration - time, this.#framerate)
+    return [preClip, postClip] as [this, this]
+  }
+
+  async clone() {
+    return new TestVideoClip(this.#width, this.#height, this.#duration, this.#framerate) as this
+  }
+
+  destroy(): void {
+    // 清理资源
+    this.#reusableCanvas = null
+    this.#reusableCtx = null
+  }
+}
+
+async function runWebAVBenchmark(currentTestIndex: number, totalTests: number): Promise<BenchmarkResult> {
+  const result: BenchmarkResult = {
+    name: 'WebAV',
+    description: 'WebAV 编码+封装',
+    totalFrames: testConfig.value.totalFrames,
+    totalTime: 0,
+    fps: 0,
+    success: false,
+  }
+
+  try {
+    const startTime = performance.now()
+
+    // 创建测试 Clip
+    const duration = (testConfig.value.totalFrames / testConfig.value.framerate) * 1000000 // 微秒
+    const testClip = new TestVideoClip(
+      testConfig.value.width,
+      testConfig.value.height,
+      duration,
+      testConfig.value.framerate,
+    )
+
+    // 创建 OffscreenSprite
+    const sprite = new OffscreenSprite(testClip)
+    await sprite.ready
+
+    // 创建 Combinator
+    const combinator = new Combinator({
+      width: testConfig.value.width,
+      height: testConfig.value.height,
+      fps: testConfig.value.framerate,
+      videoCodec: selectedCodec.value,
+      bitrate: testConfig.value.bitrate,
+      bgColor: '#000000',
+    })
+
+    combinator.on('OutputProgress', (p) => {
+      // 更新进度
+      progress.value = (currentTestIndex + p) / totalTests * 100
+    })
+
+    // 添加 sprite 到 combinator
+    await combinator.addSprite(sprite, { main: true })
+
+    // 获取输出流并转换为 blob
+    const videoBlob = await new Response(combinator.output()).blob()
+
+    const endTime = performance.now()
+    result.totalTime = endTime - startTime
+    result.fps = (testConfig.value.totalFrames * 1000) / result.totalTime
+    result.success = true
+    result.fileSize = videoBlob.size
+
+    // 保存视频数据用于下载
+    encodedVideos.value.set('WebAV', {
+      config: {} as VideoEncoderConfig,
+      blob: videoBlob,
+    })
+
+    // 清理资源
+    combinator.destroy()
   }
   catch (error) {
     result.error = (error as Error).message
@@ -375,8 +651,8 @@ async function runBenchmarks() {
   results.value = []
   progress.value = 0
 
-  // 计算总的测试数量（选中的编解码器的编码测试 + mediabunny 测试）
-  const totalTests = 2 // 1个编码器 + mediabunny
+  // 计算总的测试数量（WebCodecs 编码测试 + mediabunny 测试 + WebAV 测试）
+  const totalTests = 3
   let currentTestIndex = 0
 
   // 测试选中的编码器
@@ -388,7 +664,7 @@ async function runBenchmarks() {
   }
   catch (error) {
     console.error(`Benchmark failed for ${selectedCodec.value}:`, error)
-    currentTestIndex++ // 跳过当前编码测试
+    currentTestIndex++
   }
 
   // 运行 mediabunny 测试
@@ -396,9 +672,21 @@ async function runBenchmarks() {
     currentTest.value = 'Testing mediabunny video generation...'
     const mediabunnyResult = await runMediaBunnyBenchmark(currentTestIndex, totalTests, selectedCodec.value)
     results.value.push(mediabunnyResult)
+    currentTestIndex++
   }
   catch (error) {
     console.error('MediaBunny benchmark failed:', error)
+    currentTestIndex++
+  }
+
+  // 运行 WebAV 测试
+  try {
+    currentTest.value = 'Testing WebAV video generation...'
+    const webavResult = await runWebAVBenchmark(currentTestIndex, totalTests)
+    results.value.push(webavResult)
+  }
+  catch (error) {
+    console.error('WebAV benchmark failed:', error)
   }
 
   currentTest.value = 'Benchmark completed!'
@@ -431,46 +719,15 @@ async function downloadVideo(codec: string) {
   }
 
   try {
-    // 如果是 mediabunny 生成的视频，直接下载 blob
-    if (codec === 'mediabunny' && videoData.blob) {
+    // 如果是 mediabunny 或 WebAV 生成的视频，直接下载 blob
+    if ((codec === 'mediabunny' || codec === 'WebAV') && videoData.blob) {
       const url = URL.createObjectURL(videoData.blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `mediabunny-${testConfig.value.width}x${testConfig.value.height}-${Date.now()}.mp4`
+      a.download = `${codec}-${testConfig.value.width}x${testConfig.value.height}-${Date.now()}.mp4`
       a.click()
       URL.revokeObjectURL(url)
-      return
     }
-
-    // 创建 MP4 容器（简化版本，实际生产中可能需要更复杂的 MP4 muxer）
-    const chunks = videoData.chunks
-    const totalSize = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)
-
-    // 创建一个简单的字节数组来存储所有编码数据
-    const buffer = new ArrayBuffer(totalSize)
-    let offset = 0
-
-    for (const chunk of chunks) {
-      chunk.copyTo(buffer.slice(offset, offset + chunk.byteLength))
-      offset += chunk.byteLength
-    }
-
-    // 获取文件扩展名
-    let extension = 'mp4'
-    if (codec.startsWith('vp8') || codec.startsWith('vp9')) {
-      extension = 'webm'
-    }
-    else if (codec.startsWith('av01')) {
-      extension = 'mp4' // AV1 也可以用 mp4 容器
-    }
-
-    const blob = new Blob([buffer], { type: `video/${extension}` })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${codec}-${testConfig.value.width}x${testConfig.value.height}-${Date.now()}.${extension}`
-    a.click()
-    URL.revokeObjectURL(url)
   }
   catch (error) {
     console.error('下载视频失败:', error)
@@ -479,7 +736,7 @@ async function downloadVideo(codec: string) {
 
 async function openVideoPreview(codec: string) {
   const videoData = encodedVideos.value.get(codec)
-  if (!videoData) {
+  if (!videoData || !videoData.blob) {
     console.error('未找到该编解码器的视频数据')
     return
   }
@@ -491,7 +748,7 @@ async function openVideoPreview(codec: string) {
 
     const instance = modal.open({
       codec,
-      videoData,
+      videoData: videoData as any,
       testConfig: testConfig.value,
     })
 
@@ -509,6 +766,11 @@ function clearResults() {
   currentTest.value = ''
   encodedVideos.value.clear()
 }
+
+// 组件销毁时清理资源
+onUnmounted(() => {
+  testFrameGenerator.destroy()
+})
 </script>
 
 <template>
@@ -586,7 +848,7 @@ function clearResults() {
             <UInput v-model.number="testConfig.bitrate" type="number" :min="100000" :max="50000000" class="w-32" />
           </div>
           <div class="flex items-center gap-2">
-            <label class="text-sm font-medium text-gray-300 whitespace-nowrap">关键帧</label>
+            <label class="text-sm font-medium text-gray-300 whitespace-nowrap">关键帧(秒)</label>
             <UInput v-model.number="testConfig.keyFrameInterval" type="number" :min="1" :max="120" class="w-32" />
           </div>
           <div class="flex items-center gap-2">
@@ -650,9 +912,6 @@ function clearResults() {
             <thead class="bg-gray-700">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 tracking-wider">
-                  编解码器
-                </th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 tracking-wider">
                   操作类型
                 </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-300 tracking-wider">
@@ -676,16 +935,9 @@ function clearResults() {
               </tr>
             </thead>
             <tbody class="bg-gray-800 divide-y divide-gray-700">
-              <tr v-for="result in results" :key="`${result.codec}-${result.operation}`" :class="result.success ? '' : 'bg-red-900/20'">
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">
-                  <div v-if="result.codec === 'mediabunny'" class="flex flex-col">
-                    <span>{{ result.codec }}</span>
-                    <span v-if="result.actualCodec" class="text-xs text-gray-400">(使用: {{ result.actualCodec }})</span>
-                  </div>
-                  <span v-else>{{ result.codec }}</span>
-                </td>
+              <tr v-for="result in results" :key="`${result.name}`" :class="result.success ? '' : 'bg-red-900/20'">
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                  {{ result.operation === 'mediabunny-generation' ? 'MediaBunny 视频生成' : 'WebCodecs 编码' }}
+                  {{ result.description }}
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                   {{ result.totalFrames }}
@@ -708,26 +960,25 @@ function clearResults() {
                   </span>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap">
-                  <div v-if="result.success && (encodedVideos.has(result.codec) || result.codec === 'mediabunny')" class="flex gap-2">
+                  <div v-if="result.success && encodedVideos.has(result.name) && encodedVideos.get(result.name)?.blob" class="flex gap-2">
                     <UButton
                       size="xs"
                       color="info"
-                      @click="downloadVideo(result.codec)"
+                      @click="downloadVideo(result.name)"
                     >
                       下载视频
                     </UButton>
                     <UButton
-                      v-if="result.codec !== 'mediabunny'"
                       size="xs"
                       color="primary"
-                      title="自动播放编码后的视频帧"
-                      @click="openVideoPreview(result.codec)"
+                      title="播放生成的视频"
+                      @click="openVideoPreview(result.name)"
                     >
                       预览
                     </UButton>
                   </div>
                   <span v-else class="text-gray-500 text-xs">
-                    -
+                    {{ result.success ? (result.name !== 'mediabunny' && result.name !== 'WebAV' ? '仅性能测试' : '-') : '-' }}
                   </span>
                 </td>
               </tr>
