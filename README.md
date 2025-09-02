@@ -32,6 +32,18 @@
 | ffmpeg 命令行                | 86101.00    | 209.06 | 12.20         |
 | [基准] ffmpeg 命令行生成纯黑 | 85753.00    | 209.91 | 1.64          |
 
+#### 12th Gen Intel(R) Core(TM) i7-12700 + NGIDIA GeForce RTX 2080 Ti
+
+| 测试项                          | 总耗时 (ms) | FPS    | 文件大小 (MB) |
+| ------------------------------- | ----------- | ------ | ------------- |
+| MediaBunny (GPU 利用率只有 60%) | 52837.40    | 340.67 | 22.55         |
+| WebAV                           | 35930.20    | 500.97 | 36.63         |
+| Python + ffmpeg (没跑起来)      | TBD.        | TBD.   | TBD.          |
+| ffmpeg 命令行                   | 39913.00    | 450.98 | 17.10         |
+| [基准] ffmpeg 命令行生成纯黑    | 39882.00    | 451.33 | 1.67          |
+
+TODO: Windows 上看起来数据不是很合理，还得研究研究控制变量
+
 ### 前端启动命令
 
 ```
@@ -57,7 +69,9 @@ python main.py # 启动
 
 ### ffmpeg 命令
 
-生成测试视频：
+#### 生成测试视频：
+
+##### macOS
 
 ```
 ffmpeg -f lavfi -i color=c=black:s=1920x1080:r=30:d=600 \
@@ -67,8 +81,27 @@ text='Frame\: %{n}': x=700: y=500: fontsize=100: fontcolor=white: box=0" \
 ffmpeg.mp4 -y -benchmark
 ```
 
-生成纯黑基准视频：
+##### Windows Nvidia
+
+```
+./ffmpeg.exe -f lavfi -i color=c=black:s=1920x1080:r=30:d=600 \
+-vf "drawtext=fontfile='C\:/Windows/Fonts/arial.ttf': \
+text='Frame\: %{n}': x=700: y=500: fontsize=100: fontcolor=white: box=0" \
+-c:v h264_nvenc -b:v 4000000 -g 90 -keyint_min 90 -pix_fmt yuv420p \
+ffmpeg.mp4 -y -benchmark
+
+```
+
+#### 生成纯黑基准视频：
+
+##### macOS
 
 ```
 ffmpeg -f lavfi -i color=c=black:s=1920x1080:r=30:d=600 -c:v h264_videotoolbox -b:v 4000000 -g 90 -keyint_min 9 -pix_fmt yuv420p ffmpeg_baseline.mp4 -y -benchmark
+```
+
+##### Windows Nvidia
+
+```
+ffmpeg -f lavfi -i color=c=black:s=1920x1080:r=30:d=600 -c:v h264_nvenc -b:v 4000000 -g 90 -keyint_min 9 -pix_fmt yuv420p ffmpeg_baseline.mp4 -y -benchmark
 ```
