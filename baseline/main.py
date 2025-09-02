@@ -84,96 +84,6 @@ def detect_hardware_encoders():
     return hardware_encoders
 
 
-def get_encoder_params(codec, bitrate):
-    """根据编码器类型返回相应的参数"""
-    # 处理比特率参数，支持数值和字符串格式
-    if isinstance(bitrate, int):
-        # 如果是数值，转换为字符串格式
-        bitrate_str = str(bitrate)
-        maxrate_str = str(bitrate * 2)
-        bufsize_str = str(bitrate * 2)
-    elif isinstance(bitrate, str) and bitrate.isdigit():
-        # 如果是纯数字字符串
-        bitrate_str = bitrate
-        maxrate_str = str(int(bitrate) * 2)
-        bufsize_str = str(int(bitrate) * 2)
-    elif isinstance(bitrate, str) and (bitrate.endswith("M") or bitrate.endswith("k")):
-        # 如果是带单位的字符串（如 "5M", "2000k"）
-        bitrate_str = bitrate
-        if bitrate.endswith("M"):
-            base_value = int(bitrate[:-1])
-            maxrate_str = f"{base_value * 2}M"
-            bufsize_str = f"{base_value * 2}M"
-        else:  # ends with 'k'
-            base_value = int(bitrate[:-1])
-            maxrate_str = f"{base_value * 2}k"
-            bufsize_str = f"{base_value * 2}k"
-    else:
-        # 默认处理
-        bitrate_str = str(bitrate)
-        maxrate_str = str(bitrate)
-        bufsize_str = str(bitrate)
-
-    # 使用码率控制模式 - 针对不同编码器优化
-    if "nvenc" in codec:
-        return [
-            "-preset",
-            "p1",  # 最快的NVENC预设
-            "-tune",
-            "ll",  # 低延迟调优
-            "-rc",
-            "cbr",  # 恒定比特率
-            "-b:v",
-            bitrate_str,
-            "-maxrate",
-            maxrate_str,
-            "-bufsize",
-            bufsize_str,
-        ]
-    elif "qsv" in codec:
-        return [
-            "-preset",
-            "veryfast",  # 最快的QSV预设
-            "-look_ahead",
-            "0",  # 禁用前瞻
-            "-b:v",
-            bitrate_str,
-            "-maxrate",
-            maxrate_str,
-            "-bufsize",
-            bufsize_str,
-        ]
-    elif "amf" in codec:
-        return ["-quality", "speed", "-rc", "cbr", "-b:v", bitrate_str]  # 优先速度
-    elif "videotoolbox" in codec:
-        return [
-            "-b:v",
-            bitrate_str,
-            "-maxrate",
-            maxrate_str,
-            "-bufsize",
-            bufsize_str,
-            "-allow_sw",
-            "0",  # 强制硬件编码
-        ]
-    else:
-        # 软件编码器优化参数
-        return [
-            "-preset",
-            "ultrafast",
-            "-tune",
-            "zerolatency",
-            "-x264-params",
-            "rc-lookahead=0:bframes=0:weightp=0:weightb=0:ref=1",
-            "-b:v",
-            bitrate_str,
-            "-maxrate",
-            maxrate_str,
-            "-bufsize",
-            bufsize_str,
-        ]
-
-
 # 全局字体缓存，避免重复加载
 _font_cache = None
 _font_lock = Lock()
@@ -185,15 +95,14 @@ def get_font():
     if _font_cache is None:
         with _font_lock:
             if _font_cache is None:
-                _font_cache = ImageFont.load_default(size=36)
+                _font_cache = ImageFont.load_default(size=100)
     return _font_cache
 
 
-# 随机帧生成函数
-def generate_random_frame(width=1920, height=1080, frame_number=0):
-    # 预计算颜色和文本
-    r, g, b = random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
-    bg_color = (r, g, b)
+# 生成帧的函数
+def generate_frame(width=1920, height=1080, frame_number=0):
+    # 固定黑色背景
+    bg_color = (0, 0, 0)
 
     # 创建图像（使用更高效的方式）
     img = Image.new("RGB", (width, height), bg_color)
@@ -204,13 +113,29 @@ def generate_random_frame(width=1920, height=1080, frame_number=0):
     text_color = (255, 255, 255)
 
     # 预计算文本内容
+    description_text = "python+ffmpeg"
     frame_text = f"Frame: {frame_number}"
     time_seconds = frame_number / 30.0
     time_text = f"Time: {time_seconds:.2f}s"
 
-    # 绘制文本
-    draw.text((50, 50), frame_text, fill=text_color, font=font)
-    draw.text((50, 80), time_text, fill=text_color, font=font)
+    # 计算画布中心位置
+    center_x = width // 2
+    center_y = height // 2
+
+    # 获取文本边界框来计算居中位置
+    desc_bbox = draw.textbbox((0, 0), description_text, font=font)
+    frame_bbox = draw.textbbox((0, 0), frame_text, font=font)
+    time_bbox = draw.textbbox((0, 0), time_text, font=font)
+
+    # 计算居中的x坐标
+    desc_x = center_x - (desc_bbox[2] - desc_bbox[0]) // 2
+    frame_x = center_x - (frame_bbox[2] - frame_bbox[0]) // 2
+    time_x = center_x - (time_bbox[2] - time_bbox[0]) // 2
+
+    # 绘制居中文本，上下间距120px
+    draw.text((desc_x, center_y - 120), description_text, fill=text_color, font=font)
+    draw.text((frame_x, center_y), frame_text, fill=text_color, font=font)
+    draw.text((time_x, center_y + 120), time_text, fill=text_color, font=font)
 
     # 直接转换为字节，减少中间转换
     frame_array = np.array(img, dtype=np.uint8)
@@ -223,7 +148,7 @@ def generate_frames_batch(frame_numbers, width, height):
     """
     batch_data = []
     for frame_num in frame_numbers:
-        frame_data = generate_random_frame(width, height, frame_num)
+        frame_data = generate_frame(width, height, frame_num)
         batch_data.append((frame_num, frame_data))
     return batch_data
 
@@ -250,16 +175,11 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
     # 确保输出目录存在
     os.makedirs(os.path.dirname(output_file) or ".", exist_ok=True)
 
-    # 获取编码器特定参数
-    encoder_params = get_encoder_params(codec, bitrate)
-
     # 构建 FFmpeg 命令
     ffmpeg_cmd = [
         "ffmpeg",
         "-y",  # 覆盖输出文件
         "-f",
-        "rawvideo",
-        "-vcodec",
         "rawvideo",
         "-pix_fmt",
         "rgb24",
@@ -272,15 +192,21 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
         "-c:v",
         codec,
         "-g",
-        f"90",
+        "90",
+        "-keyint_min",
+        "90",
     ]
 
     # 添加编码器参数
-    ffmpeg_cmd.extend(encoder_params)
+    ffmpeg_cmd.extend(["-b:v", bitrate])
 
     # 添加通用输出格式参数
     ffmpeg_cmd.extend(["-pix_fmt", "yuv420p", "-f", "mp4"])
     ffmpeg_cmd.append(output_file)
+
+    # 输出最终命令
+    print("最终 FFmpeg 命令:")
+    print(" ".join(ffmpeg_cmd))
 
     print(
         f"开始编码测试，使用编码器: {codec}, 分辨率: {width}x{height}, 帧数: {frame_count}"
@@ -472,7 +398,7 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
     end_time = time.time()
     elapsed = end_time - start_time
 
-    print(f"编码完成! 耗时: {elapsed:.2f}秒")
+    print(f"编码完成! 耗时: {elapsed*1000:.2f}毫秒")
     print(f"平均帧率: {frame_count/elapsed:.2f} FPS")
     print(f"生成帧数: {frames_generated}, 编码帧数: {frames_encoded}")
     print(f"输出文件: {os.path.abspath(output_file)}")

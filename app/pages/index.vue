@@ -157,16 +157,6 @@ class TestFrameGenerator {
   private reusableCtx: OffscreenCanvasRenderingContext2D | null = null
 
   /**
-   * 生成随机颜色
-   */
-  private generateRandomColor(): string {
-    const r = Math.floor(Math.random() * 256)
-    const g = Math.floor(Math.random() * 256)
-    const b = Math.floor(Math.random() * 256)
-    return `rgb(${r}, ${g}, ${b})`
-  }
-
-  /**
    * 获取或创建画布
    */
   private getCanvas(width: number, height: number): { canvas: OffscreenCanvas, ctx: OffscreenCanvasRenderingContext2D } {
@@ -181,10 +171,10 @@ class TestFrameGenerator {
   /**
    * 创建用于 WebCodecs 的 VideoFrame
    */
-  createVideoFrame(frameNumber: number, width: number, height: number, framerate: number): VideoFrame {
+  createVideoFrame(frameNumber: number, width: number, height: number, framerate: number, description?: string): VideoFrame {
     const { canvas, ctx } = this.getCanvas(width, height)
 
-    this.drawFrameContent(ctx, width, height, frameNumber, framerate)
+    this.drawFrameContent(ctx, width, height, frameNumber, framerate, description)
 
     return new VideoFrame(canvas, {
       timestamp: frameNumber * (1000000 / framerate), // 微秒
@@ -192,30 +182,31 @@ class TestFrameGenerator {
   }
 
   /**
-   * 在已有的画布上绘制随机背景和文本信息（用于 mediabunny）
+   * 在已有的画布上绘制黑色背景和白色文本信息
    */
-  drawFrameContent(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number, frameNumber: number, framerate: number): void {
-    // 绘制随机背景
-    ctx.fillStyle = this.generateRandomColor()
+  drawFrameContent(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number, frameNumber: number, framerate: number, description?: string): void {
+    // 绘制黑色背景
+    ctx.fillStyle = '#000000'
     ctx.fillRect(0, 0, width, height)
 
-    // 添加文本信息
+    // 添加白色文本信息
     const time = frameNumber * (1000000 / framerate)
-    ctx.fillStyle = 'white'
-    ctx.font = '24px Arial'
-    ctx.fillText(`Frame: ${frameNumber}`, 50, 50)
-    ctx.fillText(`Time: ${(time / 1000000).toFixed(2)}s`, 50, 80)
-  }
+    ctx.fillStyle = '#FFFFFF'
+    ctx.font = '100px Arial'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
 
-  /**
-   * 创建新的画布并绘制随机背景和文本（用于 WebAV）
-   */
-  createCanvasWithContent(width: number, height: number, frameNumber: number, time: number): OffscreenCanvas {
-    const canvas = new OffscreenCanvas(width, height)
-    const ctx = canvas.getContext('2d', { alpha: false })!
-    this.drawFrameContent(ctx, width, height, frameNumber, time)
+    const centerX = width / 2
+    const centerY = height / 2
 
-    return canvas
+    // 显示 benchmark description（如果提供）
+    if (description) {
+      ctx.fillText(description, centerX, centerY - 120)
+    }
+
+    // 显示帧数和时间信息
+    ctx.fillText(`Frame: ${frameNumber}`, centerX, centerY)
+    ctx.fillText(`Time: ${(time / 1000000).toFixed(2)}s`, centerX, centerY + 120)
   }
 
   /**
@@ -312,7 +303,7 @@ async function runEncodingBenchmark(codec: string, currentTestIndex: number, tot
             return
           }
 
-          const frame = testFrameGenerator.createVideoFrame(i, testConfig.value.width, testConfig.value.height, testConfig.value.framerate)
+          const frame = testFrameGenerator.createVideoFrame(i, testConfig.value.width, testConfig.value.height, testConfig.value.framerate, 'WebCodecs 纯编码')
 
           try {
             encoder.encode(frame, {
@@ -454,7 +445,7 @@ async function runMediaBunnyBenchmark(currentTestIndex: number, totalTests: numb
       renderCtx.clearRect(0, 0, renderCanvas.width, renderCanvas.height)
 
       // 使用统一的测试帧生成器绘制完整内容（背景 + 文本）
-      testFrameGenerator.drawFrameContent(renderCtx, renderCanvas.width, renderCanvas.height, currentFrame, frameRate)
+      testFrameGenerator.drawFrameContent(renderCtx, renderCanvas.width, renderCanvas.height, currentFrame, frameRate, 'MediaBunny')
 
       // 更新进度
       const testProgress = currentFrame / totalFrames
@@ -542,7 +533,7 @@ class TestVideoClip implements IClip {
     const { canvas, ctx } = this.#getCanvas()
 
     // 使用统一的测试帧生成器绘制内容
-    testFrameGenerator.drawFrameContent(ctx, this.#width, this.#height, frameNumber, this.#framerate)
+    testFrameGenerator.drawFrameContent(ctx, this.#width, this.#height, frameNumber, this.#framerate, 'WebAV')
 
     // 创建 VideoFrame
     const videoFrame = new VideoFrame(canvas, {
