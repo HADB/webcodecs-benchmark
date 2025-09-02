@@ -119,12 +119,17 @@ def generate_frame(width=1920, height=1080, frame_number=0):
 
     # 直接转换为字节，减少中间转换
     frame_array = np.array(img, dtype=np.uint8)
-    return frame_array.tobytes()
+    frame_bytes = frame_array.tobytes()
+
+    # 立即清理临时对象
+    del img, draw, frame_array
+
+    return frame_bytes
 
 
 def generate_frames_batch(frame_numbers, width, height):
     """
-    批量生成帧数据的工作函数
+    批量生成帧数据的工作函数 - 优化内存使用
     """
     batch_data = []
     for frame_num in frame_numbers:
@@ -178,7 +183,7 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
     ]
 
     # 添加编码器参数
-    ffmpeg_cmd.extend(["-b:v", bitrate])
+    ffmpeg_cmd.extend(["-b:v", f"{bitrate}"])
 
     # 添加通用输出格式参数
     ffmpeg_cmd.extend(["-pix_fmt", "yuv420p", "-f", "mp4"])
@@ -192,8 +197,8 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
         f"开始编码测试，使用编码器: {codec}, 分辨率: {width}x{height}, 帧数: {frame_count}"
     )
 
-    # 创建帧数据队列 - 限制队列大小以控制内存使用
-    frame_queue = queue.Queue(maxsize=64)  # 最多缓存64帧
+    # 创建帧数据队列 - 大幅减少队列大小以控制内存使用
+    frame_queue = queue.Queue(maxsize=4)  # 只缓存4帧，约24MB内存
 
     # 线程间的状态控制
     generation_complete = Event()
@@ -207,54 +212,34 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
         """帧生成线程 - 生产者"""
         nonlocal frames_generated
         try:
-            # 使用多线程生成
-            gen_workers = min(os.cpu_count() or 1, 6)  # 为编码留出CPU资源
+            print("使用按需生成策略，避免内存堆积...")
 
-            print(f"使用 {gen_workers} 个线程并行生成帧数据...")
+            # 简化策略：按需顺序生成，避免大量缓存
+            batch_size = 4  # 减小批次大小
 
-            # 分批处理帧
-            batch_size = 8
-            frame_batches = []
             for i in range(0, frame_count, batch_size):
+                if encoding_error.is_set():
+                    return
+
                 batch_end = min(i + batch_size, frame_count)
-                frame_batches.append(list(range(i, batch_end)))
+                batch_frames = list(range(i, batch_end))
 
-            with ThreadPoolExecutor(max_workers=gen_workers) as executor:
-                # 提交所有批次任务
-                future_to_batch = {
-                    executor.submit(generate_frames_batch, batch, width, height): batch
-                    for batch in frame_batches
-                }
+                # 生成当前批次
+                batch_data = generate_frames_batch(batch_frames, width, height)
 
-                # 按顺序收集结果并放入队列
-                batch_results = {}
-                for future in as_completed(future_to_batch):
-                    batch = future_to_batch[future]
-                    try:
-                        results = future.result()
-                        # 按批次的第一个帧号排序
-                        batch_index = batch[0]
-                        batch_results[batch_index] = results
-
-                        # 检查是否可以按顺序输出
-                        while frames_generated in batch_results:
-                            for frame_num, frame_data in batch_results[
-                                frames_generated
-                            ]:
-                                if encoding_error.is_set():
-                                    return
-                                frame_queue.put(frame_data, timeout=10)
-                                frames_generated += 1
-
-                            # 找到下一个连续的批次
-                            next_batch_start = frames_generated
-                            if next_batch_start not in batch_results:
-                                break
-
-                    except Exception as e:
-                        print(f"生成帧数据时出错: {e}")
-                        encoding_error.set()
+                # 立即放入队列，不缓存
+                for frame_num, frame_data in batch_data:
+                    if encoding_error.is_set():
                         return
+                    try:
+                        frame_queue.put(frame_data, timeout=10)
+                        frames_generated += 1
+                    except queue.Full:
+                        print("队列已满，等待...")
+                        if encoding_error.is_set():
+                            return
+                        frame_queue.put(frame_data, timeout=30)
+                        frames_generated += 1
 
         except Exception as e:
             print(f"帧生成线程出错: {e}")
@@ -272,7 +257,7 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
         nonlocal frames_encoded
         try:
             write_buffer = b""
-            buffer_size = 1024 * 1024 * 8  # 8MB 缓冲区
+            buffer_size = 1024 * 1024 * 4  # 减少到4MB缓冲区，降低内存使用
 
             while True:
                 try:
@@ -327,7 +312,7 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
     proc = subprocess.Popen(
         ffmpeg_cmd,
         stdin=subprocess.PIPE,
-        bufsize=1024 * 1024 * 16,  # 16MB 缓冲区
+        bufsize=1024 * 1024 * 8,  # 减少到8MB缓冲区
         env={**os.environ, "FFREPORT": "level=quiet"},
     )
 
@@ -375,17 +360,28 @@ def parse_arguments():
     parser.add_argument(
         "--output",
         "-o",
-        default="output/benchmark.mp4",
-        help="输出文件路径 (默认: output/benchmark.mp4)",
+        default="output/python_ffmpeg.mp4",
+        help="输出文件路径 (默认: output/python_ffmpeg.mp4)",
     )
     parser.add_argument(
-        "--frames", "-f", type=int, default=1800, help="生成的帧数 (默认: 1800)"
+        "--frames",
+        "-f",
+        type=int,
+        default=18000,
+        help="生成的帧数 (默认: 18000)",
     )
     parser.add_argument(
-        "--width", "-w", type=int, default=1920, help="视频宽度 (默认: 1920)"
+        "--width",
+        "-w",
+        type=int,
+        default=1920,
+        help="视频宽度 (默认: 1920)",
     )
     parser.add_argument(
-        "--height", type=int, default=1080, help="视频高度 (默认: 1080)"
+        "--height",
+        type=int,
+        default=1080,
+        help="视频高度 (默认: 1080)",
     )
     parser.add_argument(
         "--encoder",
@@ -394,10 +390,9 @@ def parse_arguments():
     )
     parser.add_argument(
         "--bitrate",
-        "-b",
-        type=str,
-        required=True,
-        help="目标码率，支持多种格式: 数值(如 8000000 表示8Mbps)、带单位(如 8M, 2000k)",
+        type=int,
+        default=4000000,
+        help="目标码率，默认 4000000",
     )
 
     return parser.parse_args()
