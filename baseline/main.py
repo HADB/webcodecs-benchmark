@@ -113,29 +113,9 @@ def generate_frame(width=1920, height=1080, frame_number=0):
     text_color = (255, 255, 255)
 
     # 预计算文本内容
-    description_text = "python+ffmpeg"
     frame_text = f"Frame: {frame_number}"
-    time_seconds = frame_number / 30.0
-    time_text = f"Time: {time_seconds:.2f}s"
 
-    # 计算画布中心位置
-    center_x = width // 2
-    center_y = height // 2
-
-    # 获取文本边界框来计算居中位置
-    desc_bbox = draw.textbbox((0, 0), description_text, font=font)
-    frame_bbox = draw.textbbox((0, 0), frame_text, font=font)
-    time_bbox = draw.textbbox((0, 0), time_text, font=font)
-
-    # 计算居中的x坐标
-    desc_x = center_x - (desc_bbox[2] - desc_bbox[0]) // 2
-    frame_x = center_x - (frame_bbox[2] - frame_bbox[0]) // 2
-    time_x = center_x - (time_bbox[2] - time_bbox[0]) // 2
-
-    # 绘制居中文本，上下间距120px
-    draw.text((desc_x, center_y - 120), description_text, fill=text_color, font=font)
-    draw.text((frame_x, center_y), frame_text, fill=text_color, font=font)
-    draw.text((time_x, center_y + 120), time_text, fill=text_color, font=font)
+    draw.text((700, 500), frame_text, fill=text_color, font=font)
 
     # 直接转换为字节，减少中间转换
     frame_array = np.array(img, dtype=np.uint8)
@@ -266,16 +246,6 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
                                 frame_queue.put(frame_data, timeout=10)
                                 frames_generated += 1
 
-                                # 显示生成进度
-                                if (
-                                    frames_generated % 100 == 0
-                                    or frames_generated == frame_count
-                                ):
-                                    progress = (frames_generated / frame_count) * 100
-                                    print(
-                                        f"帧生成进度: {progress:.1f}% ({frames_generated}/{frame_count})"
-                                    )
-
                             # 找到下一个连续的批次
                             next_batch_start = frames_generated
                             if next_batch_start not in batch_results:
@@ -322,13 +292,6 @@ def run_benchmark(output_file, codec, frame_count, width, height, bitrate):
                         if proc.stdin:
                             proc.stdin.write(write_buffer)
                         write_buffer = b""
-
-                    # 显示编码进度
-                    if frames_encoded % 100 == 0 or frames_encoded == frame_count:
-                        progress = (frames_encoded / frame_count) * 100
-                        print(
-                            f"编码进度: {progress:.1f}% ({frames_encoded}/{frame_count})"
-                        )
 
                     frame_queue.task_done()
 

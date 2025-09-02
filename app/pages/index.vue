@@ -7,7 +7,6 @@ import {
   getFirstEncodableVideoCodec,
   Mp4OutputFormat,
   Output,
-  QUALITY_HIGH,
 } from 'mediabunny'
 
 interface BenchmarkResult {
@@ -171,10 +170,10 @@ class TestFrameGenerator {
   /**
    * 创建用于 WebCodecs 的 VideoFrame
    */
-  createVideoFrame(frameNumber: number, width: number, height: number, framerate: number, description?: string): VideoFrame {
+  createVideoFrame(frameNumber: number, width: number, height: number, framerate: number): VideoFrame {
     const { canvas, ctx } = this.getCanvas(width, height)
 
-    this.drawFrameContent(ctx, width, height, frameNumber, framerate, description)
+    this.drawFrameContent(ctx, width, height, frameNumber)
 
     return new VideoFrame(canvas, {
       timestamp: frameNumber * (1000000 / framerate), // 微秒
@@ -184,29 +183,12 @@ class TestFrameGenerator {
   /**
    * 在已有的画布上绘制黑色背景和白色文本信息
    */
-  drawFrameContent(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number, frameNumber: number, framerate: number, description?: string): void {
-    // 绘制黑色背景
+  drawFrameContent(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number, frameNumber: number): void {
     ctx.fillStyle = '#000000'
     ctx.fillRect(0, 0, width, height)
-
-    // 添加白色文本信息
-    const time = frameNumber * (1000000 / framerate)
     ctx.fillStyle = '#FFFFFF'
     ctx.font = '100px Arial'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-
-    const centerX = width / 2
-    const centerY = height / 2
-
-    // 显示 benchmark description（如果提供）
-    if (description) {
-      ctx.fillText(description, centerX, centerY - 120)
-    }
-
-    // 显示帧数和时间信息
-    ctx.fillText(`Frame: ${frameNumber}`, centerX, centerY)
-    ctx.fillText(`Time: ${(time / 1000000).toFixed(2)}s`, centerX, centerY + 120)
+    ctx.fillText(`Frame: ${frameNumber}`, 700, 500)
   }
 
   /**
@@ -303,7 +285,7 @@ async function runEncodingBenchmark(codec: string, currentTestIndex: number, tot
             return
           }
 
-          const frame = testFrameGenerator.createVideoFrame(i, testConfig.value.width, testConfig.value.height, testConfig.value.framerate, 'WebCodecs 纯编码')
+          const frame = testFrameGenerator.createVideoFrame(i, testConfig.value.width, testConfig.value.height, testConfig.value.framerate)
 
           try {
             encoder.encode(frame, {
@@ -445,7 +427,7 @@ async function runMediaBunnyBenchmark(currentTestIndex: number, totalTests: numb
       renderCtx.clearRect(0, 0, renderCanvas.width, renderCanvas.height)
 
       // 使用统一的测试帧生成器绘制完整内容（背景 + 文本）
-      testFrameGenerator.drawFrameContent(renderCtx, renderCanvas.width, renderCanvas.height, currentFrame, frameRate, 'MediaBunny')
+      testFrameGenerator.drawFrameContent(renderCtx, renderCanvas.width, renderCanvas.height, currentFrame)
 
       // 更新进度
       const testProgress = currentFrame / totalFrames
@@ -533,7 +515,7 @@ class TestVideoClip implements IClip {
     const { canvas, ctx } = this.#getCanvas()
 
     // 使用统一的测试帧生成器绘制内容
-    testFrameGenerator.drawFrameContent(ctx, this.#width, this.#height, frameNumber, this.#framerate, 'WebAV')
+    testFrameGenerator.drawFrameContent(ctx, this.#width, this.#height, frameNumber)
 
     // 创建 VideoFrame
     const videoFrame = new VideoFrame(canvas, {
