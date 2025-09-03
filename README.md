@@ -34,15 +34,18 @@
 
 #### 12th Gen Intel(R) Core(TM) i7-12700 + NGIDIA GeForce RTX 2080 Ti
 
-| 测试项                          | 总耗时 (ms) | FPS    | 文件大小 (MB) |
-| ------------------------------- | ----------- | ------ | ------------- |
-| MediaBunny (GPU 利用率只有 60%) | 52837.40    | 340.67 | 22.55         |
-| WebAV                           | 35930.20    | 500.97 | 36.63         |
-| Python + ffmpeg (没跑起来)      | TBD.        | TBD.   | TBD.          |
-| ffmpeg 命令行                   | 39913.00    | 450.98 | 17.10         |
-| [基准] ffmpeg 命令行生成纯黑    | 39882.00    | 451.33 | 1.67          |
+| 测试项                                 | 总耗时 (ms) | FPS    | 文件大小 (MB) |
+| -------------------------------------- | ----------- | ------ | ------------- |
+| MediaBunny (GPU 利用率只有 60%)        | 60417.80    | 297.93 | 22.55         |
+| WebAV                                  | 38363.90    | 469.19 | 36.63         |
+| Python + ffmpeg (WSL2 Ubuntu)          | 98273.24    | 183.16 | 17.70         |
+| Python + ffmpeg (Windows) TBD.         | -           | -      | -             |
+| ffmpeg 命令行 (WSL2 Ubuntu)            | 47710.00    | 377.28 | 16.60         |
+| ffmpeg 命令行 (Windows)                | 47498.00    | 378.96 | 17.10         |
+| ffmpeg 命令行生成纯黑 (WSL2 Ubuntu)    | 47682.00    | 377.50 | 1.67          |
+| [基准] ffmpeg 命令行生成纯黑 (Windows) | 47499.00    | 378.96 | 1.67          |
 
-TODO: Windows 上看起来数据不是很合理，还得研究研究控制变量
+TODO: Windows 上看起来数据不是很合理，还得研究研究控制变量，GPU 的利用率不尽相同
 
 ### 前端启动命令
 
@@ -92,6 +95,17 @@ ffmpeg.mp4 -y -benchmark
 
 ```
 
+##### WSL2 Nvidia
+
+```
+ffmpeg -f lavfi -i color=c=black:s=1920x1080:r=30:d=600 \
+-vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf: \
+text='Frame\: %{n}': x=700: y=500: fontsize=100: fontcolor=white: box=0" \
+-c:v h264_nvenc -b:v 4000k -g 90 -keyint_min 90 -pix_fmt yuv420p \
+ffmpeg.mp4 -y -benchmark
+
+```
+
 #### 生成纯黑基准视频：
 
 ##### macOS
@@ -101,6 +115,12 @@ ffmpeg -f lavfi -i color=c=black:s=1920x1080:r=30:d=600 -c:v h264_videotoolbox -
 ```
 
 ##### Windows Nvidia
+
+```
+./ffmpeg.exe -f lavfi -i color=c=black:s=1920x1080:r=30:d=600 -c:v h264_nvenc -b:v 4000000 -g 90 -keyint_min 9 -pix_fmt yuv420p ffmpeg_baseline.mp4 -y -benchmark
+```
+
+##### WSL2 Ubuntu Nvidia
 
 ```
 ffmpeg -f lavfi -i color=c=black:s=1920x1080:r=30:d=600 -c:v h264_nvenc -b:v 4000000 -g 90 -keyint_min 9 -pix_fmt yuv420p ffmpeg_baseline.mp4 -y -benchmark
