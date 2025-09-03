@@ -45,10 +45,10 @@
 | ffmpeg 命令行生成纯黑 (WSL2 Ubuntu)    | 100%               | 47682.00    | 377.50 | 1.67          |
 | [基准] ffmpeg 命令行生成纯黑 (Windows) | 100%               | 47499.00    | 378.96 | 1.67          |
 
-备注 1：该测试数据基于远程桌面测试，远程桌面有个 28% 左右的 GPU Encoder 基础消耗
-备注 2：看了下 WebAV 源码，初步分析了其性能在该设备上性能领先的原因：
-a. WebAV 起了两个 encoder，在这个场景下提高了 GPU 的利用率，性能比 MediaBunny 单个 encoder 更好
-b. 帧的绘制方面，WebAV 上采用了并行绘制，CPU 利用率高于 ffmpeg drawtext 逐帧绘制
+- 备注 1：该测试数据基于远程桌面测试，远程桌面有个 28% 左右的 GPU Encoder 基础消耗
+- 备注 2：看了下 WebAV 源码，初步分析了其性能在该设备上性能领先的原因：
+  - WebAV 起了两个 encoder，在这个场景下提高了 GPU 的利用率，性能比 MediaBunny 单个 encoder 更好
+  - 帧的绘制方面，WebAV 上采用了并行绘制，CPU 利用率高于 ffmpeg drawtext 逐帧绘制
 
 TODO: 这个场景下还得看看怎么再控制变量尽可能公平测试。
 
