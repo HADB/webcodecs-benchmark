@@ -34,21 +34,20 @@
 
 #### 12th Gen Intel(R) Core(TM) i7-12700 + NVIDIA GeForce RTX 2080 Ti
 
-| 测试项                                 | GPU Encoder 利用率 | 总耗时 (ms) | FPS    | 文件大小 (MB) |
+| 测试项                                  | GPU Encoder 利用率 | 总耗时 (ms) | FPS    | 文件大小 (MB) |
 | -------------------------------------- | ------------------ | ----------- | ------ | ------------- |
-| MediaBunny                             | 70%                | 52403.90    | 343.49 | 22.55         |
-| WebAV                                  | 93%                | 38363.90    | 469.19 | 36.63         |
-| Python + ffmpeg (WSL2 Ubuntu)          | 58%                | 98273.24    | 183.16 | 17.70         |
+| MediaBunny                             | 59%                | 57644.40    | 312.26 | 22.55         |
+| WebAV                                  | 81%                | 37854.50    | 475.50 | 36.63         |
+| Python + ffmpeg (WSL2 Ubuntu)          | 58%                | 98929.38    | 181.95 | 17.70         |
 | Python + ffmpeg (Windows) TBD.         | -                  | -           | -      | -             |
-| ffmpeg 命令行 (WSL2 Ubuntu)            | 100%               | 47710.00    | 377.28 | 16.60         |
-| ffmpeg 命令行 (Windows)                | 100%               | 47498.00    | 378.96 | 17.10         |
-| ffmpeg 命令行生成纯黑 (WSL2 Ubuntu)    | 100%               | 47682.00    | 377.50 | 1.67          |
-| [基准] ffmpeg 命令行生成纯黑 (Windows) | 100%               | 47499.00    | 378.96 | 1.67          |
+| ffmpeg 命令行 (WSL2 Ubuntu)             | 100%               | 40053.00    | 449.40 | 16.60         |
+| ffmpeg 命令行 (Windows)                 | 100%               | 39859.00    | 451.59 | 17.10         |
+| ffmpeg 命令行生成纯黑 (WSL2 Ubuntu)      | 100%               | 40004.00    | 449.96 | 1.67          |
+| [基准] ffmpeg 命令行生成纯黑 (Windows)    | 100%               | 39792.00    | 452.35 | 1.67          |
 
-- 备注 1：该测试数据基于远程桌面测试，远程桌面有个 28% 左右的 GPU Encoder 基础消耗
-- 备注 2：看了下 WebAV 源码，初步分析了其性能在该设备上性能领先的原因：
-  - WebAV 起了两个 encoder，在这个场景下提高了 GPU 的利用率，性能比 MediaBunny 单个 encoder 更好
-  - 帧的绘制方面，WebAV 上采用了并行绘制，CPU 利用率高于 ffmpeg drawtext 逐帧绘制
+- 备注：看了下 WebAV 源码，初步分析了其性能在该设备上性能领先的原因：
+  - WebAV 起了两个 encoder，在这个场景下提高了 GPU Encoder 的利用率，性能比 MediaBunny 单个 encoder 更好
+  - 帧生成方面，WebAV 上采用了并行生成，性能高于 ffmpeg drawtext 逐帧生成，ffmpeg drawtext 输出帧的效率可能跟不上 encoder 处理的效率
 
 TODO: 这个场景下还得看看怎么再控制变量尽可能公平测试。
 
