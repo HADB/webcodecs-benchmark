@@ -155,3 +155,14 @@ ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
 ```
 
 > 注：NVIDIA GPU 使用 `-c:v h264_nvenc`
+
+
+### 附：测试视频
+
+https://github.com/user-attachments/assets/6151fc00-4e1c-43dc-8cd6-fcba36b5b8bf
+
+https://github.com/user-attachments/assets/f3ea28d6-6ee7-4c5b-8827-091fbe1ab7f3
+
+https://github.com/user-attachments/assets/81a0dfa1-c122-47ca-a451-6a3b558e3082
+
+https://github.com/user-attachments/assets/0f0852ae-45c3-4b99-93fd-4fa3ade34aa9
