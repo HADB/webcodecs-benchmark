@@ -72,12 +72,12 @@ ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
 
 #### MacBook Pro M4
 
-| 测试项                | 总耗时 (ms) | FPS |
-| --------------------- | ----------- | --- |
-| WebCodecs (1080p)     |             |     |
-| ffmpeg 命令行 (1080p) |             |     |
-| WebCodecs (4K)        |             |     |
-| ffmpeg 命令行 (4K)    |             |     |
+| 测试项                | 总耗时 (ms) | FPS   |
+| --------------------- | ----------- | ----- |
+| WebCodecs (1080p)     | 16965.5     | 212.1 |
+| ffmpeg 命令行 (1080p) |             |       |
+| WebCodecs (4K)        | 59260.5     | 60.7  |
+| ffmpeg 命令行 (4K)    |             |       |
 
 #### MacBook Pro M1
 
@@ -155,7 +155,6 @@ ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
 ```
 
 > 注：NVIDIA GPU 使用 `-c:v h264_nvenc`
-
 
 ### 附：测试视频
 
