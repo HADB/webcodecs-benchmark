@@ -54,7 +54,6 @@ const testModeOptions = ref([
 const selectedTestMode = ref<'grayscale' | 'grid-grayscale'>('grayscale')
 const uploadedVideos = ref<File[]>([])
 const uploadError = ref('')
-const fileInput = ref<HTMLInputElement>()
 
 let frameCachePool: FrameCache[] = []
 let grayscaleWebGLContext: WebGLContext
@@ -131,30 +130,13 @@ function updateTestMode(value: string) {
   }
 }
 
-function handleVideoUpload(files: File[]) {
+function onVideoUpload() {
   uploadError.value = ''
 
   const requiredVideoCount = benchmarkConfig.value.testMode === 'grid-grayscale' ? 4 : 1
 
-  if (files.length !== requiredVideoCount) {
+  if (uploadedVideos.value.length !== requiredVideoCount) {
     uploadError.value = `${benchmarkConfig.value.testMode === 'grid-grayscale' ? '四宫格' : '灰度'}模式需要上传 ${requiredVideoCount} 个视频文件`
-    return
-  }
-
-  // 验证文件类型
-  const invalidFiles = files.filter((file) => !file.type.startsWith('video/'))
-  if (invalidFiles.length > 0) {
-    uploadError.value = '请上传有效的视频文件'
-    return
-  }
-
-  uploadedVideos.value = files
-}
-
-function onFileChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  if (target.files) {
-    handleVideoUpload(Array.from(target.files))
   }
 }
 
@@ -504,7 +486,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div class="bg-gray-800 p-4 rounded-md mt-6 border border-gray-700">
+      <div class="p-4 rounded-md mt-6 border border-gray-700">
         <h2 class="text-lg font-semibold mb-4 text-white">
           测试选项
         </h2>
@@ -562,7 +544,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 视频上传区域 -->
-      <div class="bg-gray-800 p-4 rounded-md mt-6 border border-gray-700">
+      <div class="p-4 rounded-md mt-6 border border-gray-700">
         <h2 class="text-lg font-semibold mb-4 text-white">
           上传测试视频
         </h2>
@@ -576,53 +558,16 @@ onUnmounted(() => {
               灰度模式需要上传 1 个视频文件
             </p>
           </div>
-
-          <div class="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center hover:border-gray-500 transition-colors">
-            <input
-              ref="fileInput"
-              type="file"
-              :multiple="benchmarkConfig.testMode === 'grid-grayscale'"
-              accept="video/*"
-              class="hidden"
-              @change="onFileChange"
-            >
-            <div class="space-y-2">
-              <div class="text-gray-400">
-                <svg class="mx-auto h-12 w-12" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                  <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                </svg>
-              </div>
-              <div>
-                <UButton
-                  color="primary"
-                  variant="outline"
-                  @click="fileInput?.click()"
-                >
-                  选择视频文件
-                </UButton>
-              </div>
-              <p class="text-xs text-gray-500">
-                支持 MP4、WebM 等视频格式
-              </p>
-            </div>
-          </div>
-
-          <!-- 上传的文件列表 -->
-          <div v-if="uploadedVideos.length > 0" class="space-y-2">
-            <h3 class="text-sm font-medium text-gray-300">
-              已上传的视频：
-            </h3>
-            <div class="space-y-1">
-              <div
-                v-for="(file, index) in uploadedVideos"
-                :key="index"
-                class="flex items-center justify-between bg-gray-700 p-2 rounded text-sm"
-              >
-                <span class="text-gray-300">{{ file.name }}</span>
-                <span class="text-gray-500">{{ (file.size / (1024 * 1024)).toFixed(1) }} MB</span>
-              </div>
-            </div>
-          </div>
+          <UFileUpload
+            v-model="uploadedVideos"
+            multiple
+            accept="video/*"
+            class="w-full"
+            label="选择视频文件"
+            description="支持 MP4、WebM 等视频格式"
+            layout="list"
+            @change="onVideoUpload()"
+          />
 
           <!-- 错误信息 -->
           <div v-if="uploadError" class="bg-red-900/50 border border-red-600 text-red-300 p-3 rounded-md text-sm">
@@ -676,7 +621,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <div v-if="results.length > 0" class="mt-6 bg-gray-800 rounded-md shadow-lg overflow-hidden border border-gray-700">
+      <div v-if="results.length > 0" class="mt-6 rounded-md shadow-lg overflow-hidden border border-gray-700">
         <h2 class="text-lg font-semibold p-4 border-b border-gray-600 text-white">
           测试结果
         </h2>
@@ -723,7 +668,7 @@ onUnmounted(() => {
                 </th>
               </tr>
             </thead>
-            <tbody class="bg-gray-800 divide-y divide-gray-700">
+            <tbody class="divide-y divide-gray-700">
               <tr v-for="result in results" :key="`${result.startTime}`" :class="result.success ? '' : 'bg-red-900/20'">
                 <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
                   {{ result.startTime || '-' }}
