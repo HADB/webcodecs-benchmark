@@ -1,6 +1,9 @@
 <script lang="ts" setup>
-import type { BenchmarkConfig, BenchmarkResult, FrameCache, WebGLContext } from '~~/types'
+import type {
+  VideoSample,
+} from 'mediabunny'
 
+import type { BenchmarkConfig, BenchmarkResult, FrameCache, WebGLContext } from '~~/types'
 import {
   ALL_FORMATS,
   BlobSource,
@@ -53,49 +56,37 @@ const uploadedVideos = ref<File[]>([])
 const uploadError = ref('')
 const fileInput = ref<HTMLInputElement>()
 
-let inputVideos: Blob[] = []
 let frameCachePool: FrameCache[] = []
-let grayscaleWebGLContext: WebGLContext | null = null
-let gridGrayscaleWebGLContext: WebGLContext | null = null
+let grayscaleWebGLContext: WebGLContext
+let gridGrayscaleWebGLContext: WebGLContext
+
+const canStartTest = computed(() => {
+  const requiredVideoCount = benchmarkConfig.value.testMode === 'grid-grayscale' ? 4 : 1
+  return isWebCodecsSupported.value
+    && selectedCodec.value
+    && !isRunning.value
+    && uploadedVideos.value.length === requiredVideoCount
+})
 
 function cleanupFrameCache() {
   // 清理帧缓存
   frameCachePool = []
 
   // 清理全局 WebGL 上下文
-  if (grayscaleWebGLContext) {
-    grayscaleWebGLContext.cleanup()
-    grayscaleWebGLContext = null
-  }
-
-  if (gridGrayscaleWebGLContext) {
-    gridGrayscaleWebGLContext.cleanup()
-    gridGrayscaleWebGLContext = null
-  }
+  grayscaleWebGLContext?.cleanup()
+  gridGrayscaleWebGLContext?.cleanup()
 }
 
 function initializeFrameCache() {
-  const currentWidth = benchmarkConfig.value.width
-  const currentHeight = benchmarkConfig.value.height
-
-  // 检查是否需要重新创建帧缓存（分辨率变化）
-  const needRecreate = frameCachePool.length === 0
-    || frameCachePool[0]?.canvas.width !== currentWidth
-    || frameCachePool[0]?.canvas.height !== currentHeight
-
-  if (!needRecreate) {
-    return
-  }
-
   // 先清理现有的缓存
   cleanupFrameCache()
 
-  // 创建全局 WebGL 上下文
-  const tempCanvas = new OffscreenCanvas(currentWidth, currentHeight)
-  grayscaleWebGLContext = setupWebGLGrayscale(tempCanvas)
+  const currentWidth = benchmarkConfig.value.width
+  const currentHeight = benchmarkConfig.value.height
 
-  const tempGridCanvas = new OffscreenCanvas(currentWidth, currentHeight)
-  gridGrayscaleWebGLContext = setupWebGLGridGrayscale(tempGridCanvas)
+  // 创建全局 WebGL 上下文
+  grayscaleWebGLContext = setupWebGLGrayscale(new OffscreenCanvas(currentWidth, currentHeight))
+  gridGrayscaleWebGLContext = setupWebGLGridGrayscale(new OffscreenCanvas(currentWidth, currentHeight))
 
   // 创建帧缓存池
   for (let i = 0; i < frameCacheSize; i++) {
@@ -107,10 +98,6 @@ function initializeFrameCache() {
       inUse: false,
     })
   }
-}
-
-function getAvailableFrameCache(): FrameCache | null {
-  return frameCachePool.find((cache) => !cache.inUse) || null
 }
 
 // 更新分辨率的函数
@@ -171,19 +158,9 @@ function onFileChange(event: Event) {
   }
 }
 
-const canStartTest = computed(() => {
-  const requiredVideoCount = benchmarkConfig.value.testMode === 'grid-grayscale' ? 4 : 1
-  return isWebCodecsSupported.value
-    && selectedCodec.value
-    && !isRunning.value
-    && uploadedVideos.value.length === requiredVideoCount
-})
-
-// 统一的基准测试函数
 async function runBenchmark(): Promise<BenchmarkResult> {
   const startTime = performance.now()
   const startTimeStr = new Date().toLocaleString('zh-CN')
-  const isGridMode = benchmarkConfig.value.testMode === 'grid-grayscale'
 
   const result: BenchmarkResult = {
     totalFrames: benchmarkConfig.value.maxFrames,
@@ -201,7 +178,7 @@ async function runBenchmark(): Promise<BenchmarkResult> {
 
   try {
     // 根据模式创建输入源
-    const inputs = inputVideos.map((video) => new Input({ source: new BlobSource(video), formats: ALL_FORMATS }))
+    const inputs = uploadedVideos.value.map((video) => new Input({ source: new BlobSource(video), formats: ALL_FORMATS }))
 
     // 获取视频轨道和采样器
     const videoTracks = await Promise.all(inputs.map((input) => input.getPrimaryVideoTrack()))
@@ -260,121 +237,85 @@ async function runBenchmark(): Promise<BenchmarkResult> {
     // 启动编码消费者
     encodePromise = encodeConsumer()
 
-    const demuxStartTime = performance.now()
-    let lastFrameDecodeDoneTime = performance.now()
+    // 根据测试模式初始化样本迭代器
+    const isGridMode = benchmarkConfig.value.testMode === 'grid-grayscale'
+    const requiredIteratorCount = isGridMode ? 4 : 1
 
-    if (isGridMode) {
-      // 四宫格模式：同时处理四个视频流
-      const sampleIterators = videoSampleSinks.map((sink) => sink.samples()[Symbol.asyncIterator]())
+    if (isGridMode && videoSampleSinks.length < 4) {
+      throw new Error('四宫格模式需要至少4个视频流')
+    }
 
-      while (decodedFrames.value < benchmarkConfig.value.maxFrames) {
-        if (demuxTime.value === 0) {
-          demuxTime.value = performance.now() - demuxStartTime
-        }
+    if (!isGridMode && videoSampleSinks.length < 1) {
+      throw new Error('无法获取视频采样器')
+    }
 
-        // 等待队列有空间
-        while (frameQueue.length >= maxQueueSize) {
-          await new Promise((resolve) => setTimeout(resolve, 1))
-        }
+    // 统一创建迭代器数组
+    const sampleIterators = videoSampleSinks
+      .slice(0, requiredIteratorCount)
+      .map((sink) => sink.samples()[Symbol.asyncIterator]())
 
-        // 获取可用的四宫格帧缓存
-        let frameCache = getAvailableFrameCache()
-        while (!frameCache) {
-          await new Promise((resolve) => setTimeout(resolve, 1))
-          frameCache = getAvailableFrameCache()
-        }
+    while (decodedFrames.value < benchmarkConfig.value.maxFrames) {
+      // 等待队列有空间
+      while (frameQueue.length >= maxQueueSize) {
+        await new Promise((resolve) => setTimeout(resolve, 1))
+      }
 
-        // 从四个视频流中各取一帧
-        const samplePromises = sampleIterators.map((iterator) => iterator.next())
-        const sampleResults = await Promise.all(samplePromises)
+      // 获取可用的帧缓存
+      let frameCache = frameCachePool.find((cache) => !cache.inUse)
+      while (!frameCache) {
+        await new Promise((resolve) => setTimeout(resolve, 1))
+        frameCache = frameCachePool.find((cache) => !cache.inUse)
+      }
 
-        // 检查是否所有流都还有数据
-        if (sampleResults.some((result) => result.done)) {
-          break
-        }
+      const decodeStartTime = performance.now()
 
-        const samples = sampleResults.map((result) => result.value) as [any, any, any, any]
+      // 统一使用数组模式处理样本获取
+      const sampleResults = await Promise.all(sampleIterators.map((iterator) => iterator.next()))
 
-        // 解码时间统计
-        decodeTotalTime.value += performance.now() - lastFrameDecodeDoneTime
+      // 首次获取样本后记录解复用时间
+      if (demuxTime.value === 0) {
+        demuxTime.value = performance.now() - decodeStartTime
+      }
 
-        frameCache.inUse = true
-        frameCache.timestamp = samples[0].timestamp
-        frameCache.duration = 1 / benchmarkConfig.value.framerate
+      // 检查是否有流结束
+      if (sampleResults.some((result) => result.done)) {
+        break
+      }
 
+      const samples = sampleResults.map((result) => result.value as VideoSample)
+
+      // 解码时间统计
+      decodeTotalTime.value += performance.now() - decodeStartTime
+
+      frameCache.inUse = true
+      frameCache.timestamp = decodedFrames.value * (1 / benchmarkConfig.value.framerate)
+      frameCache.duration = 1 / benchmarkConfig.value.framerate
+
+      // 根据模式选择不同的渲染方式
+      const renderStartTime = performance.now()
+      if (isGridMode) {
         // 使用全局的四宫格 WebGL 上下文进行渲染
-        const renderStartTime = performance.now()
         if (gridGrayscaleWebGLContext) {
           renderGridGrayscaleFrame(gridGrayscaleWebGLContext, samples, benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
         }
-        renderTotalTime.value += performance.now() - renderStartTime
-
-        // 关闭样本
-        samples.forEach((sample) => sample.close())
-
-        // 将处理好的帧信息加入队列
-        frameQueue.push(frameCache)
-
-        totalTime.value = performance.now() - startTime
-        decodedFrames.value++
-        progress.value = (decodedFrames.value / benchmarkConfig.value.maxFrames) * 100
-        lastFrameDecodeDoneTime = performance.now()
       }
-    }
-    else {
-      // 单视频灰度模式：处理单个视频流
-      const sampleSink = videoSampleSinks[0]
-      if (!sampleSink) {
-        throw new Error('无法获取视频采样器')
-      }
-
-      for await (const sample of sampleSink.samples()) {
-        if (demuxTime.value === 0) {
-          demuxTime.value = performance.now() - demuxStartTime
-        }
-
-        // 超出总帧数则停止
-        if (decodedFrames.value >= benchmarkConfig.value.maxFrames) {
-          sample.close()
-          break
-        }
-
-        // 解码时间统计
-        decodeTotalTime.value += performance.now() - lastFrameDecodeDoneTime
-
-        // 等待队列有空间
-        while (frameQueue.length >= maxQueueSize) {
-          await new Promise((resolve) => setTimeout(resolve, 1))
-        }
-
-        // 获取可用的帧缓存
-        let frameCache = getAvailableFrameCache()
-        while (!frameCache) {
-          await new Promise((resolve) => setTimeout(resolve, 1))
-          frameCache = getAvailableFrameCache()
-        }
-
-        frameCache.inUse = true
-        frameCache.timestamp = sample.timestamp
-        frameCache.duration = 1 / benchmarkConfig.value.framerate
-
+      else {
         // 使用全局的灰度 WebGL 上下文渲染灰度滤镜
-        const renderStartTime = performance.now()
-        if (grayscaleWebGLContext) {
-          renderGrayscaleFrame(grayscaleWebGLContext, sample, benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
+        if (grayscaleWebGLContext && samples[0]) {
+          renderGrayscaleFrame(grayscaleWebGLContext, samples[0], benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
         }
-        renderTotalTime.value += performance.now() - renderStartTime
-
-        // 将处理好的帧信息加入队列
-        frameQueue.push(frameCache)
-
-        sample.close()
-
-        totalTime.value = performance.now() - startTime
-        decodedFrames.value++
-        progress.value = (decodedFrames.value / benchmarkConfig.value.maxFrames) * 100
-        lastFrameDecodeDoneTime = performance.now()
       }
+      renderTotalTime.value += performance.now() - renderStartTime
+
+      // 关闭样本
+      samples.forEach((sample) => sample.close())
+
+      // 将处理好的帧信息加入队列
+      frameQueue.push(frameCache)
+
+      totalTime.value = performance.now() - startTime
+      decodedFrames.value++
+      progress.value = (decodedFrames.value / benchmarkConfig.value.maxFrames) * 100
     }
 
     if (decodedFrames.value < benchmarkConfig.value.maxFrames) {
@@ -442,11 +383,6 @@ async function onRunButtonClick() {
   uploadError.value = ''
 
   try {
-    progressText.value = '正在准备测试视频...'
-
-    // 将上传的文件转换为 Blob
-    inputVideos = uploadedVideos.value.map((file) => new Blob([file], { type: file.type }))
-
     progressText.value = '测试中...'
     progress.value = 0
     const benchmarkResult = await runBenchmark()
@@ -762,9 +698,6 @@ onUnmounted(() => {
                   解封装 (ms)
                 </th>
                 <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
-                  封装 (ms)
-                </th>
-                <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
                   解码 (ms)
                 </th>
                 <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
@@ -772,6 +705,9 @@ onUnmounted(() => {
                 </th>
                 <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
                   编码 (ms)
+                </th>
+                <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
+                  封装 (ms)
                 </th>
                 <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
                   整体FPS
@@ -802,9 +738,6 @@ onUnmounted(() => {
                   Sum: {{ (result.demuxTime).toFixed(1) }}
                 </td>
                 <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
-                  Sum: {{ (result.remuxTime).toFixed(1) }}
-                </td>
-                <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
                   <div class="flex flex-col items-center">
                     <span>Sum: {{ (result.decodeTime).toFixed(1) }}</span>
                     <span>Avg: {{ (result.decodeTime / result.totalFrames).toFixed(1) }}</span>
@@ -821,6 +754,9 @@ onUnmounted(() => {
                     <span>Sum: {{ (result.encodeTime).toFixed(1) }}</span>
                     <span>Avg: {{ (result.encodeTime / result.totalFrames).toFixed(1) }}</span>
                   </div>
+                </td>
+                <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
+                  Sum: {{ (result.remuxTime).toFixed(1) }}
                 </td>
                 <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
                   {{ result.totalFps.toFixed(1) }}

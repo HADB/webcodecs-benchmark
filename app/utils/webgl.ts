@@ -136,6 +136,14 @@ export function setupWebGLGrayscale(canvas: OffscreenCanvas): WebGLContext {
       if (loseContext) {
         loseContext.loseContext()
       }
+
+      // 清理 WebGL 资源
+      gl.deleteProgram(program)
+      gl.deleteBuffer(positionBuffer)
+      gl.deleteBuffer(texCoordBuffer)
+      textures.forEach((texture) => {
+        gl.deleteTexture(texture)
+      })
     },
   }
 }
@@ -324,7 +332,7 @@ export function setupWebGLGridGrayscale(canvas: OffscreenCanvas): WebGLContext {
 
 export function renderGridGrayscaleFrame(
   webglContext: WebGLContext,
-  videoSamples: [VideoSample, VideoSample, VideoSample, VideoSample],
+  videoSamples: VideoSample[],
   width: number,
   height: number,
   targetCanvas: OffscreenCanvas,
