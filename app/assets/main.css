@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+@import '@nuxt/ui';
+
+/* 深色主题全局样式 */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: rgb(17, 24, 39); /* gray-900 */
+  color: rgb(229, 231, 235); /* gray-200 */
+}
