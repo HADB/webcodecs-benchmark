@@ -249,10 +249,10 @@ async function runBenchmark(): Promise<BenchmarkResult> {
         frameCache = frameCachePool.find((cache) => !cache.inUse)
       }
 
+      // 解码
       const decodeStartTime = performance.now()
-
-      // 统一使用数组模式处理样本获取
       const sampleResults = await Promise.all(sampleIterators.map((iterator) => iterator.next()))
+      decodeTotalTime.value += performance.now() - decodeStartTime
 
       // 首次获取样本后记录解复用时间
       if (demuxTime.value === 0) {
@@ -265,9 +265,6 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       }
 
       const samples = sampleResults.map((result) => result.value as VideoSample)
-
-      // 解码时间统计
-      decodeTotalTime.value += performance.now() - decodeStartTime
 
       frameCache.inUse = true
       frameCache.timestamp = decodedFrames.value * (1 / benchmarkConfig.value.framerate)
