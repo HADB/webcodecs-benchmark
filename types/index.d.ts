@@ -1,3 +1,9 @@
+declare global {
+  interface Window {
+    showSaveFilePicker: (options: any) => Promise<FileSystemFileHandle>
+  }
+}
+
 export interface BenchmarkConfig {
   width: number
   height: number
@@ -21,7 +27,6 @@ export interface BenchmarkResult {
   totalFps: number
   success: boolean
   error?: string
-  fileSize?: number
   config: BenchmarkConfig
 }
 

@@ -1,17 +1,14 @@
 <script lang="ts" setup>
-import type {
-  VideoSample,
-} from 'mediabunny'
-
+import type { VideoSample } from 'mediabunny'
 import type { BenchmarkConfig, BenchmarkResult, FrameCache, WebGLContext } from '~~/types'
 import {
   ALL_FORMATS,
   BlobSource,
-  BufferTarget,
   CanvasSource,
   Input,
   Mp4OutputFormat,
   Output,
+  StreamTarget,
   VideoSampleSink,
 } from 'mediabunny'
 import { renderGrayscaleFrame, renderGridGrayscaleFrame, setupWebGLGrayscale, setupWebGLGridGrayscale } from '~/utils/webgl'
@@ -43,7 +40,6 @@ const benchmarkConfig = ref<BenchmarkConfig>({
   testMode: 'grayscale',
 })
 
-const overlay = useOverlay()
 const resolutionOptions = ref(['360P', '720P', '1080p', '4K'])
 const selectedResolution = ref('1080p')
 const selectedCodec = ref<'avc' | 'hevc' | 'vp9' | 'av1' | 'vp8'>('avc')
@@ -141,6 +137,10 @@ function onVideoUpload() {
 }
 
 async function runBenchmark(): Promise<BenchmarkResult> {
+  const handle = await window.showSaveFilePicker({
+    suggestedName: 'webcodecs-output.mp4',
+  })
+
   const startTime = performance.now()
   const startTimeStr = new Date().toLocaleString('zh-CN')
 
@@ -166,8 +166,9 @@ async function runBenchmark(): Promise<BenchmarkResult> {
     const videoTracks = await Promise.all(inputs.map((input) => input.getPrimaryVideoTrack()))
     const videoSampleSinks = videoTracks.map((track) => new VideoSampleSink(track!))
 
+    const writableStream = await handle.createWritable()
     const output = new Output({
-      target: new BufferTarget(),
+      target: new StreamTarget(writableStream, { chunked: true }),
       format: new Mp4OutputFormat(),
     })
 
@@ -312,7 +313,6 @@ async function runBenchmark(): Promise<BenchmarkResult> {
     await output.finalize()
 
     const endTime = performance.now()
-    const videoBlob = new Blob([output.target.buffer!], { type: output.format.mimeType })
     result.totalTime = endTime - startTime
     result.demuxTime = demuxTime.value
     result.remuxTime = endTime - remuxStartTime
@@ -321,12 +321,6 @@ async function runBenchmark(): Promise<BenchmarkResult> {
     result.encodeTime = encodeTotalTime.value
     result.totalFps = (encodedFrames.value * 1000) / result.totalTime
     result.success = true
-    result.fileSize = videoBlob.size
-
-    // 保存视频数据用于下载
-    resultVideos.value.set(startTimeStr, {
-      blob: videoBlob,
-    })
   }
   catch (error) {
     result.error = (error as Error).message
@@ -393,53 +387,6 @@ function onExportResultsButtonClick() {
   a.download = `webcodecs-benchmark-${Date.now()}.json`
   a.click()
   URL.revokeObjectURL(url)
-}
-
-async function onDownloadButtonClick(codec: string) {
-  const videoData = resultVideos.value.get(codec)
-  if (!videoData) {
-    console.error('未找到该编解码器的视频数据')
-    return
-  }
-
-  try {
-    if (videoData.blob) {
-      const url = URL.createObjectURL(videoData.blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${codec}-${benchmarkConfig.value.width}x${benchmarkConfig.value.height}-${Date.now()}.mp4`
-      a.click()
-      URL.revokeObjectURL(url)
-    }
-  }
-  catch (error) {
-    console.error('下载视频失败:', error)
-  }
-}
-
-async function onPreviewButtonClick(testTime: string) {
-  const videoData = resultVideos.value.get(testTime)
-  if (!videoData || !videoData.blob) {
-    console.error('未找到该编解码器的视频数据')
-    return
-  }
-
-  try {
-    // 动态导入组件并使用 overlay 打开模态框
-    const { default: VideoPreviewModal } = await import('~/components/video-preview-modal.vue')
-    const modal = overlay.create(VideoPreviewModal)
-
-    const instance = modal.open({
-      result: results.value.find((r) => r.startTime === testTime)!,
-      blob: videoData.blob,
-    })
-
-    // 等待模态框关闭
-    await instance.result
-  }
-  catch (error) {
-    console.error('打开视频预览失败:', error)
-  }
 }
 
 function onClearResultsButtonClick() {
@@ -655,13 +602,7 @@ onUnmounted(() => {
                   整体FPS
                 </th>
                 <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
-                  文件大小
-                </th>
-                <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
                   状态
-                </th>
-                <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
-                  操作
                 </th>
               </tr>
             </thead>
@@ -703,9 +644,6 @@ onUnmounted(() => {
                 <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
                   {{ result.totalFps.toFixed(1) }}
                 </td>
-                <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
-                  {{ result.fileSize ? `${(result.fileSize / (1024 * 1024)).toFixed(1)} MB` : '-' }}
-                </td>
                 <td class="p-3 text-center whitespace-nowrap">
                   <span v-if="result.success" class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-900/50 text-green-300 border border-green-600">
                     成功
@@ -713,25 +651,6 @@ onUnmounted(() => {
                   <span v-else class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-900/50 text-red-300 border border-red-600" :title="result.error">
                     失败
                   </span>
-                </td>
-                <td class="p-3 text-center whitespace-nowrap">
-                  <div v-if="result.success && resultVideos.get(result.startTime)?.blob" class="flex items-center justify-center gap-2">
-                    <UButton
-                      size="xs"
-                      color="info"
-                      @click="onDownloadButtonClick(result.startTime)"
-                    >
-                      下载
-                    </UButton>
-                    <UButton
-                      size="xs"
-                      color="primary"
-                      title="播放生成的视频"
-                      @click="onPreviewButtonClick(result.startTime)"
-                    >
-                      预览
-                    </UButton>
-                  </div>
                 </td>
               </tr>
             </tbody>
