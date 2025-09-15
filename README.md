@@ -49,7 +49,7 @@ pnpm dev # 启动
 
 ```
 ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
-       -vf "format=gray" \
+       -vf "lutyuv='u=128:v=128'" \
        -t 120 \
        -c:v h264_videotoolbox -b:v 8000k -level 4.0 -g 90 \
        -color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv -pix_fmt yuv420p \
@@ -123,7 +123,7 @@ ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
         [3:v]setpts=PTS-STARTPTS[v3]; \
         [v0][v1][v2][v3]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[v_merged]; \
         [v_merged]scale=1920:1080[v_scaled]; \
-        [v_scaled]format=gray[v]" \
+        [v_scaled]lutyuv='u=128:v=128'[v]" \
        -map "[v]" \
        -t 120 \
        -c:v h264_videotoolbox -b:v 8000k -level 4.0 -g 90 \
@@ -146,7 +146,7 @@ ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
         [2:v]setpts=PTS-STARTPTS[v2]; \
         [3:v]setpts=PTS-STARTPTS[v3]; \
         [v0][v1][v2][v3]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[v_merged]; \
-        [v_merged]format=gray[v]" \
+        [v_merged]lutyuv='u=128:v=128'[v]" \
        -map "[v]" \
        -t 120 \
        -c:v h264_videotoolbox -b:v 8000k -level 5.1 -g 90 \
