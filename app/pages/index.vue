@@ -1,16 +1,6 @@
 <script lang="ts" setup>
-import type { VideoSample } from 'mediabunny'
 import type { BenchmarkConfig, BenchmarkResult, FrameCache, WebGLContext } from '~~/types'
-import {
-  ALL_FORMATS,
-  BlobSource,
-  CanvasSource,
-  Input,
-  Mp4OutputFormat,
-  Output,
-  StreamTarget,
-  VideoSampleSink,
-} from 'mediabunny'
+import { ALL_FORMATS, BlobSource, Input, Mp4OutputFormat, Output, StreamTarget, VideoSample, VideoSampleSink, VideoSampleSource } from 'mediabunny'
 import { renderGrayscaleFrame, renderGridGrayscaleFrame, setupWebGLGrayscale, setupWebGLGridGrayscale } from '~/utils/webgl'
 
 const frameCacheSize = 8
@@ -175,16 +165,13 @@ async function runBenchmark(): Promise<BenchmarkResult> {
     // 初始化帧缓存池
     initializeFrameCache()
 
-    // 创建 CanvasSource 专用的 canvas
-    const canvasSourceCanvas = new OffscreenCanvas(benchmarkConfig.value.width, benchmarkConfig.value.height)
-    const canvasSourceCtx = canvasSourceCanvas.getContext('2d')!
-    const canvasSource = new CanvasSource(canvasSourceCanvas, {
+    const videoSampleSource = new VideoSampleSource({
       codec: selectedCodec.value,
       bitrate: benchmarkConfig.value.bitrate,
       keyFrameInterval: benchmarkConfig.value.keyFrameInterval,
     })
 
-    output.addVideoTrack(canvasSource, {
+    output.addVideoTrack(videoSampleSource, {
       frameRate: benchmarkConfig.value.framerate,
     })
 
@@ -206,9 +193,13 @@ async function runBenchmark(): Promise<BenchmarkResult> {
         const frameCache = frameQueue.shift()!
         const encodeStartTime = performance.now()
 
-        // 将缓存的帧数据绘制到 CanvasSource 的 canvas 上
-        canvasSourceCtx.drawImage(frameCache.canvas, 0, 0)
-        await canvasSource.add(frameCache.timestamp, frameCache.duration)
+        const videoSample = new VideoSample(frameCache.canvas, {
+          timestamp: frameCache.timestamp,
+          duration: frameCache.duration,
+        })
+
+        await videoSampleSource.add(videoSample)
+        videoSample.close()
 
         // 释放帧缓存
         frameCache.inUse = false
@@ -307,7 +298,7 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       await encodePromise
     }
 
-    canvasSource.close()
+    videoSampleSource.close()
 
     const remuxStartTime = performance.now()
     await output.finalize()

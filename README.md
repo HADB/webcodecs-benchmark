@@ -43,7 +43,7 @@ pnpm i  # 安装依赖
 pnpm dev # 启动
 ```
 
-访问 `http://localhost:3000/` 进行测试。
+访问 `http://localhost:8888/` 进行测试。
 
 ### ffmpeg 命令
 
