@@ -12,28 +12,31 @@
 
 ### 性能对比
 
-#### MacBook Pro M4
+#### MacBook Pro M4 (macOS 26, 2025-09-17)
 
 | 测试项        | 总耗时 (ms) | FPS   |
 | ------------- | ----------- | ----- |
-| WebCodecs     | 15861.5     | 227.0 |
-| ffmpeg 命令行 | 15626.0     | 230.4 |
+| MediaBunny    | 16095.9     | 223.7 |
+| WebAV         | 16345.0     | 220.3 |
+| ffmpeg 命令行 | 15785.0     | 228.1 |
 
-#### MacBook Pro M1
-
-| 测试项        | 总耗时 (ms) | FPS   |
-| ------------- | ----------- | ----- |
-| WebCodecs     | 17954.5     | 200.4 |
-| ffmpeg 命令行 | 17415.0     | 206.7 |
-
-#### 12th Gen Intel(R) Core(TM) i7-12700 + NVIDIA GeForce RTX 2080 Ti
+#### MacBook Pro M1 (macOS 26, 2025-09-17)
 
 | 测试项        | 总耗时 (ms) | FPS   |
 | ------------- | ----------- | ----- |
-| WebCodecs     | 12516.1     | 287.5 |
-| ffmpeg 命令行 | 8670.0      | 415.2 |
+| MediaBunny    | 18360.2     | 196.1 |
+| WebAV         | 21839.7     | 164.8 |
+| ffmpeg 命令行 | 17612.0     | 204.4 |
 
-> 注： 该设备在执行 WebCodecs 测试时，GPU Encoder 占用只有 52% 左右，ffmpeg 测试时，GPU Encoder 占用 100%。
+#### NVIDIA RTX 3060 (Windows 10, 2025-09-17)
+
+| 测试项        | 总耗时 (ms) | FPS |
+| ------------- | ----------- | --- |
+| MediaBunny    |             |     |
+| WebAV         |             |     |
+| ffmpeg 命令行 |             |     |
+
+> 注： 该设备在执行 MediaBunny 测试时，GPU Encoder 占用只有 52% 左右，ffmpeg 测试时，GPU Encoder 占用 100%。
 
 ### 前端启动命令
 
@@ -48,15 +51,13 @@ pnpm dev # 启动
 ### ffmpeg 命令
 
 ```
-ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
+ffmpeg -i public/bbb_sunflower_1080p_30fps_part1.mp4 \
        -vf "lutyuv='u=128:v=128'" \
        -t 120 \
        -c:v h264_videotoolbox -b:v 8000k -level 4.0 -g 90 \
        -color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv -pix_fmt yuv420p \
-       .output/ffmpeg_test1_1080p.mp4 -y -benchmark
+       output/ffmpeg_test1.mp4 -y -benchmark
 ```
-
-> 注：NVIDIA GPU 使用 `-c:v h264_nvenc`
 
 ### 测试 2
 
@@ -70,28 +71,31 @@ ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
 
 ### 性能对比
 
-#### MacBook Pro M4
+#### MacBook Pro M4 (macOS 26, 2025-09-17)
 
 | 测试项        | 总耗时 (ms) | FPS  |
 | ------------- | ----------- | ---- |
-| WebCodecs     | 59789.1     | 60.2 |
+| MediaBunny    | 59645.4     | 60.3 |
+| WebAV         | 61108.4     | 58.9 |
 | ffmpeg 命令行 | 59392.0     | 60.6 |
 
-#### MacBook Pro M1
+#### MacBook Pro M1 (macOS 26, 2025-09-17)
 
 | 测试项        | 总耗时 (ms) | FPS  |
 | ------------- | ----------- | ---- |
-| WebCodecs     | 64947.0     | 55.4 |
-| ffmpeg 命令行 | 64080.0     | 56.2 |
+| MediaBunny    | 64947.0     | 55.4 |
+| WebAV         | 73595.7     | 48.9 |
+| ffmpeg 命令行 | 64336.0     | 56.0 |
 
-#### 12th Gen Intel(R) Core(TM) i7-12700 + NVIDIA GeForce RTX 2080 Ti
+#### NVIDIA RTX 3060 (Windows 10, 2025-09-17)
 
-| 测试项        | 总耗时 (ms) | FPS   |
-| ------------- | ----------- | ----- |
-| WebCodecs     | 40128.0     | 89.7  |
-| ffmpeg 命令行 | 31952.0     | 112.7 |
+| 测试项        | 总耗时 (ms) | FPS |
+| ------------- | ----------- | --- |
+| MediaBunny    |             |     |
+| WebAV         |             |     |
+| ffmpeg 命令行 |             |     |
 
-> 注： 与测试 1 类似，该设备在执行 WebCodecs 测试时，GPU Encoder 利用率未打满。
+> 注： 与测试 1 类似，该设备在执行 MediaBunny 测试时，GPU Encoder 利用率未打满。
 
 ### 前端启动命令
 
@@ -104,10 +108,10 @@ pnpm dev # 启动
 ### ffmpeg 命令
 
 ```
-ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
-       -i bbb_sunflower_1080p_30fps_part2.mp4 \
-       -i bbb_sunflower_1080p_30fps_part3.mp4 \
-       -i bbb_sunflower_1080p_30fps_part4.mp4 \
+ffmpeg -i public/bbb_sunflower_1080p_30fps_part1.mp4 \
+       -i public/bbb_sunflower_1080p_30fps_part2.mp4 \
+       -i public/bbb_sunflower_1080p_30fps_part3.mp4 \
+       -i public/bbb_sunflower_1080p_30fps_part4.mp4 \
        -filter_complex \
        "[0:v]setpts=PTS-STARTPTS[v0]; \
         [1:v]setpts=PTS-STARTPTS[v1]; \
@@ -119,17 +123,28 @@ ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
        -t 120 \
        -c:v h264_videotoolbox -b:v 8000k -level 5.1 -g 90 \
        -color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv -pix_fmt yuv420p \
-       .output/ffmpeg_test2_4k.mp4 -y -benchmark
+       output/ffmpeg_test2.mp4 -y -benchmark
 ```
 
-> 注：NVIDIA GPU 使用 `-c:v h264_nvenc`
+准备四个测试视频片段：
 
-### 附：测试视频
+```
+# 第1段：0:00 - 2:00 (0-120秒)
+ffmpeg -i public/bbb_sunflower_1080p_30fps.mp4 -ss 0 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv public/bbb_sunflower_1080p_30fps_part1.mp4 -y
 
-https://github.com/user-attachments/assets/6151fc00-4e1c-43dc-8cd6-fcba36b5b8bf
+# 第2段：2:00 - 4:00 (120-240秒)
+ffmpeg -i public/bbb_sunflower_1080p_30fps.mp4 -ss 120 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv public/bbb_sunflower_1080p_30fps_part2.mp4 -y
 
-https://github.com/user-attachments/assets/f3ea28d6-6ee7-4c5b-8827-091fbe1ab7f3
+# 第3段：4:00 - 6:00 (240-360秒)
+ffmpeg -i public/bbb_sunflower_1080p_30fps.mp4 -ss 240 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv public/bbb_sunflower_1080p_30fps_part3.mp4 -y
 
-https://github.com/user-attachments/assets/81a0dfa1-c122-47ca-a451-6a3b558e3082
+# 第4段：6:00 - 8:00 (360-480秒)
+ffmpeg -i public/bbb_sunflower_1080p_30fps.mp4 -ss 360 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv public/bbb_sunflower_1080p_30fps_part4.mp4 -y
+```
 
-https://github.com/user-attachments/assets/0f0852ae-45c3-4b99-93fd-4fa3ade34aa9
+```
+ffmpeg -i  public/bbb_sunflower_1080p_30fps_part1.mp4 -c copy \
+  -color_primaries bt709 -color_trc bt709 -colorspace bt709 \
+  -bsf:v h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1 \
+  public/bbb_sunflower_1080p_30fps_part1_new.mp4 -y
+```

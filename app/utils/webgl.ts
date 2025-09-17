@@ -1,5 +1,115 @@
 import type { WebGLContext } from '~~/types'
 
+// WebGL 渲染器管理类
+export class WebGLRenderer {
+  private grayscaleContext: WebGLContext | null = null
+  private gridGrayscaleContext: WebGLContext | null = null
+  private currentWidth: number = 0
+  private currentHeight: number = 0
+
+  /**
+   * 初始化 WebGL 上下文
+   * @param width 画布宽度
+   * @param height 画布高度
+   */
+  public initialize(width: number, height: number) {
+    // 如果尺寸未改变且上下文已存在，直接返回
+    if (this.currentWidth === width && this.currentHeight === height
+      && this.grayscaleContext && this.gridGrayscaleContext) {
+      return
+    }
+
+    // 清理旧的上下文
+    this.cleanup()
+
+    this.currentWidth = width
+    this.currentHeight = height
+
+    // 创建新的 WebGL 上下文
+    this.grayscaleContext = setupWebGLGrayscale(new OffscreenCanvas(width, height))
+    this.gridGrayscaleContext = setupWebGLGridGrayscale(new OffscreenCanvas(width, height))
+  }
+
+  /**
+   * 渲染灰度帧
+   * @param videoFrame 视频帧
+   * @param targetCanvas 目标画布
+   */
+  public renderGrayscaleFrame(videoFrame: VideoFrame, targetCanvas: OffscreenCanvas) {
+    if (!this.grayscaleContext) {
+      throw new Error('WebGL context not initialized. Call initialize() first.')
+    }
+
+    renderGrayscaleFrame(
+      this.grayscaleContext,
+      videoFrame,
+      this.currentWidth,
+      this.currentHeight,
+      targetCanvas,
+    )
+  }
+
+  /**
+   * 渲染四宫格灰度帧
+   * @param videoFrames 四个视频帧
+   * @param targetCanvas 目标画布
+   */
+  public renderGridGrayscaleFrame(videoFrames: VideoFrame[], targetCanvas: OffscreenCanvas) {
+    if (!this.gridGrayscaleContext) {
+      throw new Error('WebGL context not initialized. Call initialize() first.')
+    }
+
+    renderGridGrayscaleFrame(
+      this.gridGrayscaleContext,
+      videoFrames,
+      this.currentWidth,
+      this.currentHeight,
+      targetCanvas,
+    )
+  }
+
+  /**
+   * 清理所有 WebGL 资源
+   */
+  public cleanup() {
+    if (this.grayscaleContext) {
+      this.grayscaleContext.cleanup()
+      this.grayscaleContext = null
+    }
+
+    if (this.gridGrayscaleContext) {
+      this.gridGrayscaleContext.cleanup()
+      this.gridGrayscaleContext = null
+    }
+
+    this.currentWidth = 0
+    this.currentHeight = 0
+  }
+}
+
+// 创建全局 WebGL 渲染器实例
+let globalRenderer: WebGLRenderer | null = null
+
+/**
+ * 获取全局 WebGL 渲染器实例
+ */
+export function getWebGLRenderer(): WebGLRenderer {
+  if (!globalRenderer) {
+    globalRenderer = new WebGLRenderer()
+  }
+  return globalRenderer
+}
+
+/**
+ * 清理全局 WebGL 渲染器
+ */
+export function cleanupGlobalRenderer() {
+  if (globalRenderer) {
+    globalRenderer.cleanup()
+    globalRenderer = null
+  }
+}
+
 // WebGL 灰度滤镜相关函数
 export function createShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader | null {
   const shader = gl.createShader(type)

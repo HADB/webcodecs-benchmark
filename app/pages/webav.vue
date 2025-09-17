@@ -1,23 +1,14 @@
 <script lang="ts" setup>
-import type { BenchmarkConfig, BenchmarkResult, FrameCache } from '~~/types'
-import { ALL_FORMATS, BlobSource, Input, Mp4OutputFormat, Output, StreamTarget, VideoSample, VideoSampleSink, VideoSampleSource } from 'mediabunny'
-import { cleanupGlobalRenderer, getWebGLRenderer } from '~/utils/webgl'
-
-const frameQueueSize = 10
+import type { BenchmarkConfig, BenchmarkResult } from '~~/types'
+import { Combinator, MP4Clip, OffscreenSprite } from '@webav/av-cliper'
+import { GrayscaleClip } from '~/utils/grayscale-clip'
+import { GridGrayscaleClip } from '~/utils/grid-grayscale-clip'
 
 const isWebCodecsSupported = ref(false)
 const isRunning = ref(false)
 const results = ref<BenchmarkResult[]>([])
 const progressText = ref('')
 const progress = ref(0)
-const totalTime = ref(0)
-const decodeTotalTime = ref(0)
-const renderTotalTime = ref(0)
-const encodeTotalTime = ref(0)
-const demuxTime = ref(0)
-const decodedFrames = ref(0)
-const encodedFrames = ref(0)
-const resultVideos = ref<Map<string, { blob?: Blob }>>(new Map())
 
 const benchmarkConfig = ref<BenchmarkConfig>({
   width: 1920,
@@ -32,7 +23,8 @@ const benchmarkConfig = ref<BenchmarkConfig>({
 
 const resolutionOptions = ref(['360P', '720P', '1080p', '4K'])
 const selectedResolution = ref('1080p')
-const selectedCodec = ref<'avc' | 'hevc' | 'vp9' | 'av1' | 'vp8'>('avc')
+const selectedCodec = ref<string>('')
+const supportedCodecs = ref<string[]>([])
 const testModeOptions = ref([
   { label: '灰度', value: 'grayscale' },
   { label: '四宫格+灰度', value: 'grid-grayscale' },
@@ -40,8 +32,6 @@ const testModeOptions = ref([
 const selectedTestMode = ref<'grayscale' | 'grid-grayscale'>('grayscale')
 const uploadedVideos = ref<File[]>([])
 const uploadError = ref('')
-
-let frameCachePool: FrameCache[] = []
 
 const canStartTest = computed(() => {
   const requiredVideoCount = benchmarkConfig.value.testMode === 'grid-grayscale' ? 4 : 1
@@ -51,34 +41,47 @@ const canStartTest = computed(() => {
     && uploadedVideos.value.length === requiredVideoCount
 })
 
-function cleanupFrameCache() {
-  // 清理帧缓存
-  frameCachePool = []
+// 检查支持的编码器
+async function checkSupportedCodecs() {
+  const codecs = [
+    'avc1.640028', // 4.0
+    'avc1.640029', // 4.1
+    'avc1.64002a', // 4.2
+    'avc1.640032', // 5.0
+    'avc1.640033', // 5.1
+    'avc1.640034', // 5.2
+    'avc1.64003C', // 6.0
+    'avc1.64003D', // 6.1
+    'avc1.64003E', // 6.2
+    'hev1.1.6.L93.B0',
+  ]
 
-  // 清理全局 WebGL 渲染器
-  cleanupGlobalRenderer()
-}
+  const supported: string[] = []
 
-function initializeFrameCache() {
-  // 先清理现有的缓存
-  cleanupFrameCache()
+  for (const codec of codecs) {
+    try {
+      const encoderSupport = await VideoEncoder.isConfigSupported({
+        codec,
+        width: benchmarkConfig.value.width,
+        height: benchmarkConfig.value.height,
+        bitrate: benchmarkConfig.value.bitrate,
+        framerate: benchmarkConfig.value.framerate,
+      })
 
-  const currentWidth = benchmarkConfig.value.width
-  const currentHeight = benchmarkConfig.value.height
+      if (encoderSupport.supported) {
+        supported.push(codec)
+      }
+    }
+    catch (error) {
+      console.warn(`Codec ${codec} check failed:`, error)
+    }
+  }
 
-  // 初始化全局 WebGL 渲染器
-  const renderer = getWebGLRenderer()
-  renderer.initialize(currentWidth, currentHeight)
+  supportedCodecs.value = supported
 
-  // 创建帧缓存池
-  for (let i = 0; i < frameQueueSize; i++) {
-    const canvas = new OffscreenCanvas(currentWidth, currentHeight)
-    frameCachePool.push({
-      canvas,
-      timestamp: 0,
-      duration: 0,
-      inUse: false,
-    })
+  // 如果当前选择的编解码器不支持新分辨率，选择第一个支持的
+  if (!supported.includes(selectedCodec.value)) {
+    selectedCodec.value = supported[0] || ''
   }
 }
 
@@ -100,6 +103,11 @@ function updateResolution(value: string) {
     benchmarkConfig.value.width = 3840
     benchmarkConfig.value.height = 2160
   }
+
+  // 重新检查编解码器支持，因为不同分辨率可能不支持某些编解码器
+  if (isWebCodecsSupported.value) {
+    checkSupportedCodecs()
+  }
 }
 
 // 更新测试模式的函数
@@ -107,7 +115,6 @@ function updateTestMode(value: string) {
   if (value === 'grayscale' || value === 'grid-grayscale') {
     benchmarkConfig.value.testMode = value
     selectedTestMode.value = value
-    // 清空已上传的视频，因为不同模式需要不同数量的视频
     uploadedVideos.value = []
     uploadError.value = ''
   }
@@ -115,9 +122,7 @@ function updateTestMode(value: string) {
 
 function onVideoUpload() {
   uploadError.value = ''
-
   const requiredVideoCount = benchmarkConfig.value.testMode === 'grid-grayscale' ? 4 : 1
-
   if (uploadedVideos.value.length !== requiredVideoCount) {
     uploadError.value = `${benchmarkConfig.value.testMode === 'grid-grayscale' ? '四宫格' : '灰度'}模式需要上传 ${requiredVideoCount} 个视频文件`
   }
@@ -125,7 +130,7 @@ function onVideoUpload() {
 
 async function runBenchmark(): Promise<BenchmarkResult> {
   const handle = await window.showSaveFilePicker({
-    suggestedName: 'webcodecs-output.mp4',
+    suggestedName: 'webav-output.mp4',
   })
 
   const startTime = performance.now()
@@ -146,175 +151,101 @@ async function runBenchmark(): Promise<BenchmarkResult> {
   }
 
   try {
-    // 根据模式创建输入源
-    const inputs = uploadedVideos.value.map((video) => new Input({ source: new BlobSource(video), formats: ALL_FORMATS }))
+    // 创建 MP4Clip 实例
+    const mp4Clips = await Promise.all(
+      uploadedVideos.value.map((video) => {
+        const clip = new MP4Clip(video.stream())
+        return clip.ready.then(() => clip)
+      }),
+    )
 
-    // 获取视频轨道和采样器
-    const videoTracks = await Promise.all(inputs.map((input) => input.getPrimaryVideoTrack()))
-    const videoSampleSinks = videoTracks.map((track) => new VideoSampleSink(track!))
+    const duration = (benchmarkConfig.value.maxFrames / benchmarkConfig.value.framerate) * 1000000
 
-    const writableStream = await handle.createWritable()
-    const output = new Output({
-      target: new StreamTarget(writableStream, { chunked: true }),
-      format: new Mp4OutputFormat(),
-    })
+    // 根据测试模式创建相应的 Clip
+    let processedClip
+    if (benchmarkConfig.value.testMode === 'grid-grayscale') {
+      // 四宫格模式需要 4 个视频
+      if (mp4Clips.length < 4) {
+        throw new Error('四宫格模式需要 4 个视频文件')
+      }
+      processedClip = new GridGrayscaleClip(
+        benchmarkConfig.value.width,
+        benchmarkConfig.value.height,
+        duration,
+        benchmarkConfig.value.framerate,
+        mp4Clips[0]!,
+        mp4Clips[1]!,
+        mp4Clips[2]!,
+        mp4Clips[3]!,
+      )
+    }
+    else {
+      // 灰度模式只需要 1 个视频
+      if (mp4Clips.length < 1) {
+        throw new Error('灰度模式需要 1 个视频文件')
+      }
+      processedClip = new GrayscaleClip(
+        benchmarkConfig.value.width,
+        benchmarkConfig.value.height,
+        duration,
+        benchmarkConfig.value.framerate,
+        mp4Clips[0]!,
+      )
+    }
 
-    // 初始化帧缓存池
-    initializeFrameCache()
-
-    const videoSampleSource = new VideoSampleSource({
-      codec: selectedCodec.value,
+    // 创建 Combinator
+    const combinator = new Combinator({
+      width: benchmarkConfig.value.width,
+      height: benchmarkConfig.value.height,
+      fps: benchmarkConfig.value.framerate,
+      videoCodec: selectedCodec.value,
       bitrate: benchmarkConfig.value.bitrate,
-      keyFrameInterval: benchmarkConfig.value.keyFrameInterval,
     })
 
-    output.addVideoTrack(videoSampleSource, {
-      frameRate: benchmarkConfig.value.framerate,
+    combinator.on('OutputProgress', (p) => {
+      progress.value = p * 100
+      const processedFrames = p * benchmarkConfig.value.maxFrames
+      const currentTime = performance.now()
+      if (currentTime > startTime && processedFrames > 0) {
+        const elapsed = currentTime - startTime
+        const fps = (processedFrames * 1000) / elapsed
+        progressText.value = `正在处理... FPS: ${fps.toFixed(1)}`
+      }
     })
 
-    await output.start()
+    // 使用处理后的 Clip
+    const sprite = new OffscreenSprite(processedClip)
+    await sprite.ready
+    sprite.time = { offset: 0, duration }
 
-    const frameQueue: FrameCache[] = []
-    let encodePromise: Promise<void> | null = null
+    await combinator.addSprite(sprite)
 
-    // 编码器消费者函数
-    const encodeConsumer = async () => {
-      while (encodedFrames.value < result.totalFrames || frameQueue.length > 0) {
-        if (frameQueue.length === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 1))
-          continue
+    // 写入文件
+    const writableStream = await handle.createWritable()
+    const reader = combinator.output().getReader()
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) {
+          break
         }
-
-        const encodeStartTime = performance.now()
-
-        const frameCache = frameQueue.shift()!
-        const videoSample = new VideoSample(frameCache.canvas, {
-          timestamp: frameCache.timestamp,
-          duration: frameCache.duration,
-        })
-
-        await videoSampleSource.add(videoSample)
-
-        videoSample.close()
-
-        // 释放帧缓存
-        frameCache.inUse = false
-        encodeTotalTime.value += performance.now() - encodeStartTime
-        encodedFrames.value++
+        await writableStream.write(new Uint8Array(value))
       }
     }
-
-    // 启动编码消费者
-    encodePromise = encodeConsumer()
-
-    // 根据测试模式初始化样本迭代器
-    const isGridMode = benchmarkConfig.value.testMode === 'grid-grayscale'
-    const requiredIteratorCount = isGridMode ? 4 : 1
-
-    if (isGridMode && videoSampleSinks.length < 4) {
-      throw new Error('四宫格模式需要至少4个视频流')
+    finally {
+      await writableStream.close()
     }
-
-    if (!isGridMode && videoSampleSinks.length < 1) {
-      throw new Error('无法获取视频采样器')
-    }
-
-    // 统一创建迭代器数组
-    const sampleIterators = videoSampleSinks
-      .slice(0, requiredIteratorCount)
-      .map((sink) => sink.samples(0, benchmarkConfig.value.maxFrames / benchmarkConfig.value.framerate)[Symbol.asyncIterator]())
-
-    while (decodedFrames.value < benchmarkConfig.value.maxFrames) {
-      // 等待队列有空间
-      while (frameQueue.length >= frameQueueSize) {
-        await new Promise((resolve) => setTimeout(resolve, 1))
-      }
-
-      // 获取可用的帧缓存
-      let frameCache = frameCachePool.find((cache) => !cache.inUse)
-      while (!frameCache) {
-        await new Promise((resolve) => setTimeout(resolve, 1))
-        frameCache = frameCachePool.find((cache) => !cache.inUse)
-      }
-
-      // 解码
-      const decodeStartTime = performance.now()
-      const sampleResults = await Promise.all(sampleIterators.map((iterator) => iterator.next()))
-      decodeTotalTime.value += performance.now() - decodeStartTime
-
-      // 首次获取样本后记录解封装时间
-      if (demuxTime.value === 0) {
-        demuxTime.value = performance.now() - decodeStartTime
-      }
-
-      // 检查是否有流结束
-      if (sampleResults.some((result) => result.done)) {
-        sampleResults.forEach((result) => {
-          if (!result.done) {
-            result.value.close()
-          }
-        })
-        break
-      }
-
-      const videoSamples = sampleResults.map((result) => result.value as VideoSample)
-      const videoFrames = videoSamples.map((sample) => sample.toVideoFrame())
-
-      frameCache.inUse = true
-      frameCache.timestamp = decodedFrames.value * (1 / benchmarkConfig.value.framerate)
-      frameCache.duration = 1 / benchmarkConfig.value.framerate
-
-      // 根据模式选择不同的渲染方式
-      const renderStartTime = performance.now()
-      const renderer = getWebGLRenderer()
-
-      if (isGridMode) {
-        // 四宫格+灰度 WebGL 渲染
-        renderer.renderGridGrayscaleFrame(videoFrames, frameCache.canvas)
-      }
-      else {
-        // 灰度 WebGL 渲染
-        renderer.renderGrayscaleFrame(videoFrames[0]!, frameCache.canvas)
-      }
-      renderTotalTime.value += performance.now() - renderStartTime
-      videoSamples.forEach((sample) => sample.close())
-      // 将处理好的帧信息加入队列
-      frameQueue.push(frameCache)
-
-      totalTime.value = performance.now() - startTime
-      decodedFrames.value++
-      progress.value = (decodedFrames.value / benchmarkConfig.value.maxFrames) * 100
-    }
-
-    if (decodedFrames.value < benchmarkConfig.value.maxFrames) {
-      result.totalFrames = decodedFrames.value
-    }
-
-    // 等待编码器处理完所有帧
-    if (encodePromise) {
-      await encodePromise
-    }
-
-    videoSampleSource.close()
-
-    const remuxStartTime = performance.now()
-    await output.finalize()
 
     const endTime = performance.now()
     result.totalTime = endTime - startTime
-    result.demuxTime = demuxTime.value
-    result.remuxTime = endTime - remuxStartTime
-    result.decodeTime = decodeTotalTime.value
-    result.renderTime = renderTotalTime.value
-    result.encodeTime = encodeTotalTime.value
-    result.totalFps = (encodedFrames.value * 1000) / result.totalTime
+    result.totalFps = (benchmarkConfig.value.maxFrames * 1000) / result.totalTime
     result.success = true
+
+    combinator.destroy()
   }
   catch (error) {
     result.error = (error as Error).message
-  }
-  finally {
-    cleanupFrameCache()
   }
 
   return result
@@ -325,7 +256,6 @@ async function onRunButtonClick() {
     return
   }
 
-  // 检查是否已上传视频
   const requiredVideoCount = benchmarkConfig.value.testMode === 'grid-grayscale' ? 4 : 1
   if (uploadedVideos.value.length !== requiredVideoCount) {
     uploadError.value = `请先上传 ${requiredVideoCount} 个视频文件`
@@ -334,18 +264,10 @@ async function onRunButtonClick() {
 
   isRunning.value = true
   progress.value = 0
-  totalTime.value = 0
-  demuxTime.value = 0
-  decodedFrames.value = 0
-  encodedFrames.value = 0
-  decodeTotalTime.value = 0
-  renderTotalTime.value = 0
-  encodeTotalTime.value = 0
   uploadError.value = ''
 
   try {
     progressText.value = '测试中...'
-    progress.value = 0
     const benchmarkResult = await runBenchmark()
     results.value.push(benchmarkResult)
   }
@@ -372,7 +294,7 @@ function onExportResultsButtonClick() {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `webcodecs-benchmark-${Date.now()}.json`
+  a.download = `webav-benchmark-${Date.now()}.json`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -380,28 +302,17 @@ function onExportResultsButtonClick() {
 function onClearResultsButtonClick() {
   results.value = []
   progress.value = 0
-  totalTime.value = 0
-  decodedFrames.value = 0
-  encodedFrames.value = 0
-  decodeTotalTime.value = 0
-  renderTotalTime.value = 0
-  encodeTotalTime.value = 0
-  demuxTime.value = 0
   progressText.value = ''
-  resultVideos.value.clear()
 }
 
 onMounted(() => {
   if (typeof VideoEncoder !== 'undefined') {
     isWebCodecsSupported.value = true
+    checkSupportedCodecs()
   }
   else {
     isWebCodecsSupported.value = false
   }
-})
-
-onUnmounted(() => {
-  cleanupFrameCache()
 })
 </script>
 
@@ -409,12 +320,16 @@ onUnmounted(() => {
   <div class="min-h-screen bg-gray-900 text-white">
     <div class="container mx-auto p-4 max-w-7xl">
       <h1 class="text-4xl font-bold text-center mt-8 text-white">
-        WebCodecs 性能测试（MediaBunny）
+        WebCodecs 性能测试（WebAV）
       </h1>
 
       <div class="mt-6">
         <div v-if="!isWebCodecsSupported" class="bg-red-900/50 border border-red-600 text-red-300 p-4 rounded-md">
           <strong>错误:</strong> 您的浏览器不支持 WebCodecs API 的视频编码功能。请使用支持 WebCodecs 的浏览器。
+        </div>
+
+        <div v-else-if="supportedCodecs.length === 0" class="bg-yellow-900/50 border border-yellow-600 text-yellow-300 p-4 rounded-md">
+          <strong>警告:</strong> 未检测到支持的编码格式。
         </div>
       </div>
 
@@ -437,11 +352,15 @@ onUnmounted(() => {
           <div class="flex items-center gap-2">
             <label class="text-sm font-medium text-gray-300 whitespace-nowrap">编码</label>
             <USelect
+              v-if="supportedCodecs.length > 0"
               v-model="selectedCodec"
-              :items="['avc', 'hevc', 'vp9', 'av1', 'vp8']"
-              class="w-20"
+              :items="supportedCodecs"
+              class="w-38"
               placeholder="选择要测试的编码器"
             />
+            <div v-else class="text-gray-500 text-sm">
+              正在检测...
+            </div>
           </div>
           <div class="flex items-center gap-2">
             <label class="text-sm font-medium text-gray-300 whitespace-nowrap">分辨率</label>
@@ -544,10 +463,6 @@ onUnmounted(() => {
           </div>
           <div class="flex items-center justify-between text-xs text-gray-400 mt-1">
             <span>{{ progressText }}</span>
-            <span>解码FPS: {{ decodeTotalTime > 0 ? `${(decodedFrames / decodeTotalTime * 1000).toFixed(1)}` : '' }}</span>
-            <span>渲染FPS: {{ renderTotalTime > 0 ? `${(decodedFrames / renderTotalTime * 1000).toFixed(1)}` : '' }}</span>
-            <span>编码FPS: {{ encodeTotalTime > 0 ? `${(encodedFrames / encodeTotalTime * 1000).toFixed(1)}` : '' }}</span>
-            <span>整体FPS: {{ totalTime > 0 ? `${(encodedFrames / totalTime * 1000).toFixed(1)}` : '' }}</span>
             <span>{{ progress.toFixed(1) }}%</span>
           </div>
         </div>
@@ -572,21 +487,6 @@ onUnmounted(() => {
                   耗时 (ms)
                 </th>
                 <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
-                  解封装 (ms)
-                </th>
-                <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
-                  解码 (ms)
-                </th>
-                <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
-                  渲染 (ms)
-                </th>
-                <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
-                  编码 (ms)
-                </th>
-                <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
-                  封装 (ms)
-                </th>
-                <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
                   整体FPS
                 </th>
                 <th class="p-2 min-w-25 text-center text-xs font-medium text-gray-300 tracking-wider">
@@ -600,34 +500,10 @@ onUnmounted(() => {
                   {{ result.startTime || '-' }}
                 </td>
                 <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
-                  {{ result.config.testMode === 'grid-grayscale' ? '四宫格+灰度' : '灰度' }} / {{ result.config.codec }} / {{ result.config.width }}x{{ result.config.height }} / {{ result.config.framerate }}FPS /   {{ result.config.bitrate ? `${(result.config.bitrate / 1000000).toFixed(1)} Mbps` : '-' }} / {{ result.config.keyFrameInterval }}秒 / {{ result.config.maxFrames }}帧
+                  {{ result.config.testMode === 'grid-grayscale' ? '四宫格+灰度' : '灰度' }} / {{ result.config.codec }} / {{ result.config.width }}x{{ result.config.height }} / {{ result.config.framerate }}FPS / {{ result.config.bitrate ? `${(result.config.bitrate / 1000000).toFixed(1)} Mbps` : '-' }} / {{ result.config.keyFrameInterval }}秒 / {{ result.config.maxFrames }}帧
                 </td>
                 <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
                   {{ result.totalTime.toFixed(1) }}
-                </td>
-                <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
-                  Sum: {{ (result.demuxTime || 0).toFixed(1) }}
-                </td>
-                <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
-                  <div class="flex flex-col items-center">
-                    <span>Sum: {{ (result.decodeTime || 0).toFixed(1) }}</span>
-                    <span>Avg: {{ ((result.decodeTime || 0) / result.totalFrames).toFixed(1) }}</span>
-                  </div>
-                </td>
-                <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
-                  <div class="flex flex-col items-center">
-                    <span>Sum: {{ (result.renderTime || 0).toFixed(1) }}</span>
-                    <span>Avg: {{ ((result.renderTime || 0) / result.totalFrames).toFixed(1) }}</span>
-                  </div>
-                </td>
-                <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
-                  <div class="flex flex-col items-center">
-                    <span>Sum: {{ (result.encodeTime || 0).toFixed(1) }}</span>
-                    <span>Avg: {{ ((result.encodeTime || 0) / result.totalFrames).toFixed(1) }}</span>
-                  </div>
-                </td>
-                <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
-                  Sum: {{ (result.remuxTime || 0).toFixed(1) }}
                 </td>
                 <td class="p-3 text-center whitespace-nowrap text-xs text-gray-300">
                   {{ result.totalFps.toFixed(1) }}

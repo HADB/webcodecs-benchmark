@@ -19,11 +19,11 @@ export interface BenchmarkResult {
   startTime: string
   totalFrames: number
   totalTime: number
-  demuxTime: number
-  remuxTime: number
-  decodeTime: number
-  renderTime: number
-  encodeTime: number
+  demuxTime?: number
+  remuxTime?: number
+  decodeTime?: number
+  renderTime?: number
+  encodeTime?: number
   totalFps: number
   success: boolean
   error?: string

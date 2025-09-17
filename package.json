@@ -14,6 +14,7 @@
     "@antfu/eslint-config": "^5.2.1",
     "@nuxt/eslint": "1.9.0",
     "@nuxt/ui": "3.3.2",
+    "@webav/av-cliper": "^1.2.3",
     "eslint": "^9.34.0",
     "eslint-plugin-format": "^1.0.1",
     "mediabunny": "^1.15.2",
