@@ -1,4 +1,3 @@
-import type { VideoSample } from 'mediabunny'
 import type { WebGLContext } from '~~/types'
 
 // WebGL 灰度滤镜相关函数
@@ -150,14 +149,13 @@ export function setupWebGLGrayscale(canvas: OffscreenCanvas): WebGLContext {
 
 export function renderGrayscaleFrame(
   webglContext: WebGLContext,
-  videoSample: VideoSample,
+  videoFrame: VideoFrame,
   width: number,
   height: number,
   targetCanvas: OffscreenCanvas,
 ) {
   const { gl, program, positionLocation, texCoordLocation, textureLocations, positionBuffer, texCoordBuffer, textures } = webglContext
 
-  const videoFrame = videoSample.toVideoFrame()
   const targetContext = targetCanvas.getContext('2d')
 
   if (!targetContext) {
@@ -203,7 +201,6 @@ export function renderGrayscaleFrame(
   }
 
   videoFrame.close()
-  videoSample.close()
 }
 
 // 四宫格WebGL渲染设置
@@ -333,7 +330,7 @@ export function setupWebGLGridGrayscale(canvas: OffscreenCanvas): WebGLContext {
 
 export function renderGridGrayscaleFrame(
   webglContext: WebGLContext,
-  videoSamples: VideoSample[],
+  videoFrames: VideoFrame[],
   width: number,
   height: number,
   targetCanvas: OffscreenCanvas,
@@ -365,18 +362,16 @@ export function renderGridGrayscaleFrame(
     const texture = textures[i]
     const textureLocation = textureLocations[i]
 
-    const videoSample = videoSamples[i]
-    if (!texture || !textureLocation || !videoSample) {
-      videoSample?.close()
+    const videoFrame = videoFrames[i]
+    if (!texture || !textureLocation || !videoFrame) {
+      videoFrame?.close()
       continue
     }
 
-    const videoFrame = videoSample.toVideoFrame()
     gl.activeTexture(gl.TEXTURE0 + i)
     gl.bindTexture(gl.TEXTURE_2D, texture)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame)
     videoFrame.close()
-    videoSample.close()
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)

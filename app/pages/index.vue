@@ -225,7 +225,7 @@ async function runBenchmark(): Promise<BenchmarkResult> {
     // 统一创建迭代器数组
     const sampleIterators = videoSampleSinks
       .slice(0, requiredIteratorCount)
-      .map((sink) => sink.samples()[Symbol.asyncIterator]())
+      .map((sink) => sink.samples(0, benchmarkConfig.value.maxFrames / benchmarkConfig.value.framerate)[Symbol.asyncIterator]())
 
     while (decodedFrames.value < benchmarkConfig.value.maxFrames) {
       // 等待队列有空间
@@ -260,7 +260,8 @@ async function runBenchmark(): Promise<BenchmarkResult> {
         break
       }
 
-      const samples = sampleResults.map((result) => result.value as VideoSample)
+      const videoSamples = sampleResults.map((result) => result.value as VideoSample)
+      const videoFrames = videoSamples.map((sample) => sample.toVideoFrame())
 
       frameCache.inUse = true
       frameCache.timestamp = decodedFrames.value * (1 / benchmarkConfig.value.framerate)
@@ -270,14 +271,14 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       const renderStartTime = performance.now()
       if (isGridMode) {
         // 四宫格+灰度 WebGL 渲染
-        renderGridGrayscaleFrame(gridGrayscaleWebGLContext, samples, benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
+        renderGridGrayscaleFrame(gridGrayscaleWebGLContext, videoFrames, benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
       }
       else {
         // 灰度 WebGL 渲染
-        renderGrayscaleFrame(grayscaleWebGLContext, samples[0]!, benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
+        renderGrayscaleFrame(grayscaleWebGLContext, videoFrames[0]!, benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
       }
       renderTotalTime.value += performance.now() - renderStartTime
-
+      videoSamples.forEach((sample) => sample.close())
       // 将处理好的帧信息加入队列
       frameQueue.push(frameCache)
 
