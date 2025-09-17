@@ -28,13 +28,13 @@
 | WebAV         | 21839.7     | 164.8 |
 | ffmpeg 命令行 | 17612.0     | 204.4 |
 
-#### NVIDIA RTX 3060 (Windows 10, 2025-09-17)
+#### NVIDIA RTX 2080Ti (Windows 11, 2025-09-17)
 
 | 测试项        | 总耗时 (ms) | FPS |
 | ------------- | ----------- | --- |
-| MediaBunny    |             |     |
-| WebAV         |             |     |
-| ffmpeg 命令行 |             |     |
+| MediaBunny    |    12753.2         |  282.3   |
+| WebAV         |  12567.0           |  286.5   |
+| ffmpeg 命令行 |   8559          | 420.6    |
 
 > 注： 该设备在执行 MediaBunny 测试时，GPU Encoder 占用只有 52% 左右，ffmpeg 测试时，GPU Encoder 占用 100%。
 
@@ -87,13 +87,13 @@ ffmpeg -i public/bbb_sunflower_1080p_30fps_part1.mp4 \
 | WebAV         | 73595.7     | 48.9 |
 | ffmpeg 命令行 | 64336.0     | 56.0 |
 
-#### NVIDIA RTX 3060 (Windows 10, 2025-09-17)
+#### NVIDIA RTX 2080Ti (Windows 11, 2025-09-17)
 
 | 测试项        | 总耗时 (ms) | FPS |
 | ------------- | ----------- | --- |
-| MediaBunny    |             |     |
-| WebAV         |             |     |
-| ffmpeg 命令行 |             |     |
+| MediaBunny    |     39621.1        | 90.8    |
+| WebAV         |     29869.5        |  120.5   |
+| ffmpeg 命令行 |    31934.0         |  110.2   |
 
 > 注： 与测试 1 类似，该设备在执行 MediaBunny 测试时，GPU Encoder 利用率未打满。
 
