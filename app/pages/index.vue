@@ -3,7 +3,7 @@ import type { BenchmarkConfig, BenchmarkResult, FrameCache, WebGLContext } from 
 import { ALL_FORMATS, BlobSource, Input, Mp4OutputFormat, Output, StreamTarget, VideoSample, VideoSampleSink, VideoSampleSource } from 'mediabunny'
 import { renderGrayscaleFrame, renderGridGrayscaleFrame, setupWebGLGrayscale, setupWebGLGridGrayscale } from '~/utils/webgl'
 
-const frameCacheSize = 8
+const frameQueueSize = 10
 
 const isWebCodecsSupported = ref(false)
 const isRunning = ref(false)
@@ -74,7 +74,7 @@ function initializeFrameCache() {
   gridGrayscaleWebGLContext = setupWebGLGridGrayscale(new OffscreenCanvas(currentWidth, currentHeight))
 
   // 创建帧缓存池
-  for (let i = 0; i < frameCacheSize; i++) {
+  for (let i = 0; i < frameQueueSize; i++) {
     const canvas = new OffscreenCanvas(currentWidth, currentHeight)
     frameCachePool.push({
       canvas,
@@ -177,8 +177,6 @@ async function runBenchmark(): Promise<BenchmarkResult> {
 
     await output.start()
 
-    // 帧队列配置
-    const maxQueueSize = 10
     const frameQueue: FrameCache[] = []
     let encodePromise: Promise<void> | null = null
 
@@ -190,15 +188,16 @@ async function runBenchmark(): Promise<BenchmarkResult> {
           continue
         }
 
-        const frameCache = frameQueue.shift()!
         const encodeStartTime = performance.now()
 
+        const frameCache = frameQueue.shift()!
         const videoSample = new VideoSample(frameCache.canvas, {
           timestamp: frameCache.timestamp,
           duration: frameCache.duration,
         })
 
         await videoSampleSource.add(videoSample)
+
         videoSample.close()
 
         // 释放帧缓存
@@ -230,7 +229,7 @@ async function runBenchmark(): Promise<BenchmarkResult> {
 
     while (decodedFrames.value < benchmarkConfig.value.maxFrames) {
       // 等待队列有空间
-      while (frameQueue.length >= maxQueueSize) {
+      while (frameQueue.length >= frameQueueSize) {
         await new Promise((resolve) => setTimeout(resolve, 1))
       }
 
@@ -246,13 +245,18 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       const sampleResults = await Promise.all(sampleIterators.map((iterator) => iterator.next()))
       decodeTotalTime.value += performance.now() - decodeStartTime
 
-      // 首次获取样本后记录解复用时间
+      // 首次获取样本后记录解封装时间
       if (demuxTime.value === 0) {
         demuxTime.value = performance.now() - decodeStartTime
       }
 
       // 检查是否有流结束
       if (sampleResults.some((result) => result.done)) {
+        sampleResults.forEach((result) => {
+          if (!result.done) {
+            result.value.close()
+          }
+        })
         break
       }
 
@@ -265,21 +269,14 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       // 根据模式选择不同的渲染方式
       const renderStartTime = performance.now()
       if (isGridMode) {
-        // 使用全局的四宫格 WebGL 上下文进行渲染
-        if (gridGrayscaleWebGLContext) {
-          renderGridGrayscaleFrame(gridGrayscaleWebGLContext, samples, benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
-        }
+        // 四宫格+灰度 WebGL 渲染
+        renderGridGrayscaleFrame(gridGrayscaleWebGLContext, samples, benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
       }
       else {
-        // 使用全局的灰度 WebGL 上下文渲染灰度滤镜
-        if (grayscaleWebGLContext && samples[0]) {
-          renderGrayscaleFrame(grayscaleWebGLContext, samples[0], benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
-        }
+        // 灰度 WebGL 渲染
+        renderGrayscaleFrame(grayscaleWebGLContext, samples[0]!, benchmarkConfig.value.width, benchmarkConfig.value.height, frameCache.canvas)
       }
       renderTotalTime.value += performance.now() - renderStartTime
-
-      // 关闭样本
-      samples.forEach((sample) => sample.close())
 
       // 将处理好的帧信息加入队列
       frameQueue.push(frameCache)

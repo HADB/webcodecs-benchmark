@@ -203,6 +203,7 @@ export function renderGrayscaleFrame(
   }
 
   videoFrame.close()
+  videoSample.close()
 }
 
 // 四宫格WebGL渲染设置
@@ -348,11 +349,9 @@ export function renderGridGrayscaleFrame(
     textures,
   } = webglContext
 
-  const videoFrames = videoSamples.map((sample) => sample.toVideoFrame())
   const targetContext = targetCanvas.getContext('2d')
 
   if (!targetContext) {
-    videoFrames.forEach((frame) => frame.close())
     return
   }
 
@@ -365,16 +364,19 @@ export function renderGridGrayscaleFrame(
   for (let i = 0; i < 4; i++) {
     const texture = textures[i]
     const textureLocation = textureLocations[i]
-    const videoFrame = videoFrames[i]
 
-    if (!texture || !textureLocation || !videoFrame) {
-      videoFrame?.close()
+    const videoSample = videoSamples[i]
+    if (!texture || !textureLocation || !videoSample) {
+      videoSample?.close()
       continue
     }
 
+    const videoFrame = videoSample.toVideoFrame()
     gl.activeTexture(gl.TEXTURE0 + i)
     gl.bindTexture(gl.TEXTURE_2D, texture)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame)
+    videoFrame.close()
+    videoSample.close()
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
@@ -397,7 +399,4 @@ export function renderGridGrayscaleFrame(
 
   // 将 WebGL 画布内容复制到目标画布
   targetContext.drawImage(webglContext.gl.canvas, 0, 0)
-
-  // 关闭所有视频帧
-  videoFrames.forEach((frame) => frame.close())
 }
