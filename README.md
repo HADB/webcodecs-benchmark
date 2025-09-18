@@ -30,11 +30,11 @@
 
 #### NVIDIA RTX 2080Ti (Windows 11, 2025-09-17)
 
-| 测试项        | 总耗时 (ms) | FPS |
-| ------------- | ----------- | --- |
-| MediaBunny    |    12753.2         |  282.3   |
-| WebAV         |  12567.0           |  286.5   |
-| ffmpeg 命令行 |   8559          | 420.6    |
+| 测试项        | 总耗时 (ms) | FPS   |
+| ------------- | ----------- | ----- |
+| MediaBunny    | 12753.2     | 282.3 |
+| WebAV         | 12567.0     | 286.5 |
+| ffmpeg 命令行 | 8559        | 420.6 |
 
 > 注： 该设备在执行 MediaBunny 测试时，GPU Encoder 占用只有 52% 左右，ffmpeg 测试时，GPU Encoder 占用 100%。
 
@@ -51,12 +51,12 @@ pnpm dev # 启动
 ### ffmpeg 命令
 
 ```
-ffmpeg -i public/bbb_sunflower_1080p_30fps_part1.mp4 \
+ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
        -vf "lutyuv='u=128:v=128'" \
        -t 120 \
        -c:v h264_videotoolbox -b:v 8000k -level 4.0 -g 90 \
        -color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv -pix_fmt yuv420p \
-       output/ffmpeg_test1.mp4 -y -benchmark
+       ffmpeg_test1.mp4 -y -benchmark
 ```
 
 ### 测试 2
@@ -89,11 +89,11 @@ ffmpeg -i public/bbb_sunflower_1080p_30fps_part1.mp4 \
 
 #### NVIDIA RTX 2080Ti (Windows 11, 2025-09-17)
 
-| 测试项        | 总耗时 (ms) | FPS |
-| ------------- | ----------- | --- |
-| MediaBunny    |     39621.1        | 90.8    |
-| WebAV         |     29869.5        |  120.5   |
-| ffmpeg 命令行 |    31934.0         |  110.2   |
+| 测试项        | 总耗时 (ms) | FPS   |
+| ------------- | ----------- | ----- |
+| MediaBunny    | 39621.1     | 90.8  |
+| WebAV         | 29869.5     | 120.5 |
+| ffmpeg 命令行 | 31934.0     | 110.2 |
 
 > 注： 与测试 1 类似，该设备在执行 MediaBunny 测试时，GPU Encoder 利用率未打满。
 
@@ -108,10 +108,10 @@ pnpm dev # 启动
 ### ffmpeg 命令
 
 ```
-ffmpeg -i public/bbb_sunflower_1080p_30fps_part1.mp4 \
-       -i public/bbb_sunflower_1080p_30fps_part2.mp4 \
-       -i public/bbb_sunflower_1080p_30fps_part3.mp4 \
-       -i public/bbb_sunflower_1080p_30fps_part4.mp4 \
+ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
+       -i bbb_sunflower_1080p_30fps_part2.mp4 \
+       -i bbb_sunflower_1080p_30fps_part3.mp4 \
+       -i bbb_sunflower_1080p_30fps_part4.mp4 \
        -filter_complex \
        "[0:v]setpts=PTS-STARTPTS[v0]; \
         [1:v]setpts=PTS-STARTPTS[v1]; \
@@ -123,28 +123,28 @@ ffmpeg -i public/bbb_sunflower_1080p_30fps_part1.mp4 \
        -t 120 \
        -c:v h264_videotoolbox -b:v 8000k -level 5.1 -g 90 \
        -color_primaries bt709 -color_trc bt709 -colorspace bt709 -color_range tv -pix_fmt yuv420p \
-       output/ffmpeg_test2.mp4 -y -benchmark
+       ffmpeg_test2.mp4 -y -benchmark
 ```
 
 准备四个测试视频片段：
 
 ```
 # 第1段：0:00 - 2:00 (0-120秒)
-ffmpeg -i public/bbb_sunflower_1080p_30fps.mp4 -ss 0 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv public/bbb_sunflower_1080p_30fps_part1.mp4 -y
+ffmpeg -i bbb_sunflower_1080p_30fps.mp4 -ss 0 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv bbb_sunflower_1080p_30fps_part1.mp4 -y
 
 # 第2段：2:00 - 4:00 (120-240秒)
-ffmpeg -i public/bbb_sunflower_1080p_30fps.mp4 -ss 120 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv public/bbb_sunflower_1080p_30fps_part2.mp4 -y
+ffmpeg -i bbb_sunflower_1080p_30fps.mp4 -ss 120 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv bbb_sunflower_1080p_30fps_part2.mp4 -y
 
 # 第3段：4:00 - 6:00 (240-360秒)
-ffmpeg -i public/bbb_sunflower_1080p_30fps.mp4 -ss 240 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv public/bbb_sunflower_1080p_30fps_part3.mp4 -y
+ffmpeg -i bbb_sunflower_1080p_30fps.mp4 -ss 240 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv bbb_sunflower_1080p_30fps_part3.mp4 -y
 
 # 第4段：6:00 - 8:00 (360-480秒)
-ffmpeg -i public/bbb_sunflower_1080p_30fps.mp4 -ss 360 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv public/bbb_sunflower_1080p_30fps_part4.mp4 -y
+ffmpeg -i bbb_sunflower_1080p_30fps.mp4 -ss 360 -t 120 -an -b:v 4000k -c:v h264_videotoolbox -g 90 -profile:v high -pix_fmt yuv420p -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv bbb_sunflower_1080p_30fps_part4.mp4 -y
 ```
 
 ```
-ffmpeg -i  public/bbb_sunflower_1080p_30fps_part1.mp4 -c copy \
+ffmpeg -i  bbb_sunflower_1080p_30fps_part1.mp4 -c copy \
   -color_primaries bt709 -color_trc bt709 -colorspace bt709 \
   -bsf:v h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1 \
-  public/bbb_sunflower_1080p_30fps_part1_new.mp4 -y
+  bbb_sunflower_1080p_30fps_part1_new.mp4 -y
 ```

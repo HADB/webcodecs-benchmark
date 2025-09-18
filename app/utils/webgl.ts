@@ -111,7 +111,7 @@ export function cleanupGlobalRenderer() {
 }
 
 // WebGL 灰度滤镜相关函数
-export function createShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader | null {
+function createShader(gl: WebGLRenderingContext, type: number, source: string): WebGLShader | null {
   const shader = gl.createShader(type)
   if (!shader) {
     return null
@@ -129,7 +129,7 @@ export function createShader(gl: WebGLRenderingContext, type: number, source: st
   return shader
 }
 
-export function createProgram(gl: WebGLRenderingContext, vertexShader: WebGLShader, fragmentShader: WebGLShader): WebGLProgram | null {
+function createProgram(gl: WebGLRenderingContext, vertexShader: WebGLShader, fragmentShader: WebGLShader): WebGLProgram | null {
   const program = gl.createProgram()
   if (!program) {
     return null
@@ -148,7 +148,7 @@ export function createProgram(gl: WebGLRenderingContext, vertexShader: WebGLShad
   return program
 }
 
-export function setupWebGLGrayscale(canvas: OffscreenCanvas): WebGLContext {
+function setupWebGLGrayscale(canvas: OffscreenCanvas): WebGLContext {
   const gl = canvas.getContext('webgl') as WebGLRenderingContext
   if (!gl) {
     throw new Error('无法获取 WebGL 上下文')
@@ -257,7 +257,7 @@ export function setupWebGLGrayscale(canvas: OffscreenCanvas): WebGLContext {
   }
 }
 
-export function renderGrayscaleFrame(
+function renderGrayscaleFrame(
   webglContext: WebGLContext,
   videoFrame: VideoFrame,
   width: number,
@@ -314,7 +314,7 @@ export function renderGrayscaleFrame(
 }
 
 // 四宫格WebGL渲染设置
-export function setupWebGLGridGrayscale(canvas: OffscreenCanvas): WebGLContext {
+function setupWebGLGridGrayscale(canvas: OffscreenCanvas): WebGLContext {
   const gl = canvas.getContext('webgl') as WebGLRenderingContext
   if (!gl) {
     throw new Error('无法获取 WebGL 上下文')
@@ -438,7 +438,7 @@ export function setupWebGLGridGrayscale(canvas: OffscreenCanvas): WebGLContext {
   }
 }
 
-export function renderGridGrayscaleFrame(
+function renderGridGrayscaleFrame(
   webglContext: WebGLContext,
   videoFrames: VideoFrame[],
   width: number,
