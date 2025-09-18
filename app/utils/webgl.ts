@@ -40,13 +40,53 @@ export class WebGLRenderer {
       throw new Error('WebGL context not initialized. Call initialize() first.')
     }
 
-    renderGrayscaleFrame(
-      this.grayscaleContext,
-      videoFrame,
-      this.currentWidth,
-      this.currentHeight,
-      targetCanvas,
-    )
+    const { gl, program, positionLocation, texCoordLocation, textureLocations, positionBuffer, texCoordBuffer, textures } = this.grayscaleContext
+
+    const targetContext = targetCanvas.getContext('2d')
+
+    if (!targetContext) {
+      videoFrame.close()
+      return
+    }
+
+    // 设置视口
+    gl.viewport(0, 0, this.currentWidth, this.currentHeight)
+
+    // 使用程序
+    gl.useProgram(program)
+
+    const texture = textures[0]
+    const textureLocation = textureLocations[0]
+    if (texture && textureLocation && videoFrame) {
+      // 绑定并上传纹理
+      gl.bindTexture(gl.TEXTURE_2D, texture)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+
+      // 设置顶点属性
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
+      gl.enableVertexAttribArray(positionLocation)
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0)
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer)
+      gl.enableVertexAttribArray(texCoordLocation)
+      gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0)
+
+      // 设置纹理单元
+      gl.uniform1i(textureLocation, 0)
+
+      // 清除画布并绘制
+      gl.clear(gl.COLOR_BUFFER_BIT)
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+
+      // 将 WebGL 画布内容复制到目标画布
+      targetContext.drawImage(this.grayscaleContext.gl.canvas, 0, 0)
+    }
+
+    videoFrame.close()
   }
 
   /**
@@ -59,13 +99,65 @@ export class WebGLRenderer {
       throw new Error('WebGL context not initialized. Call initialize() first.')
     }
 
-    renderGridGrayscaleFrame(
-      this.gridGrayscaleContext,
-      videoFrames,
-      this.currentWidth,
-      this.currentHeight,
-      targetCanvas,
-    )
+    const {
+      gl,
+      program,
+      positionLocation,
+      texCoordLocation,
+      textureLocations,
+      positionBuffer,
+      texCoordBuffer,
+      textures,
+    } = this.gridGrayscaleContext
+
+    const targetContext = targetCanvas.getContext('2d')
+
+    if (!targetContext) {
+      return
+    }
+
+    // 设置视口
+    gl.viewport(0, 0, this.currentWidth, this.currentHeight)
+
+    // 使用程序
+    gl.useProgram(program)
+
+    for (let i = 0; i < 4; i++) {
+      const texture = textures[i]
+      const textureLocation = textureLocations[i]
+
+      const videoFrame = videoFrames[i]
+      if (!texture || !textureLocation || !videoFrame) {
+        videoFrame?.close()
+        continue
+      }
+
+      gl.activeTexture(gl.TEXTURE0 + i)
+      gl.bindTexture(gl.TEXTURE_2D, texture)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame)
+      videoFrame.close()
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+      gl.uniform1i(textureLocation, i)
+    }
+
+    // 设置顶点属性
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
+    gl.enableVertexAttribArray(positionLocation)
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer)
+    gl.enableVertexAttribArray(texCoordLocation)
+    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0)
+
+    // 清除画布并绘制
+    gl.clear(gl.COLOR_BUFFER_BIT)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+
+    // 将 WebGL 画布内容复制到目标画布
+    targetContext.drawImage(this.gridGrayscaleContext.gl.canvas, 0, 0)
   }
 
   /**
@@ -257,62 +349,6 @@ function setupWebGLGrayscale(canvas: OffscreenCanvas): WebGLContext {
   }
 }
 
-function renderGrayscaleFrame(
-  webglContext: WebGLContext,
-  videoFrame: VideoFrame,
-  width: number,
-  height: number,
-  targetCanvas: OffscreenCanvas,
-) {
-  const { gl, program, positionLocation, texCoordLocation, textureLocations, positionBuffer, texCoordBuffer, textures } = webglContext
-
-  const targetContext = targetCanvas.getContext('2d')
-
-  if (!targetContext) {
-    videoFrame.close()
-    return
-  }
-
-  // 设置视口
-  gl.viewport(0, 0, width, height)
-
-  // 使用程序
-  gl.useProgram(program)
-
-  const texture = textures[0]
-  const textureLocation = textureLocations[0]
-  if (texture && textureLocation && videoFrame) {
-    // 绑定并上传纹理
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-
-    // 设置顶点属性
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
-    gl.enableVertexAttribArray(positionLocation)
-    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0)
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer)
-    gl.enableVertexAttribArray(texCoordLocation)
-    gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0)
-
-    // 设置纹理单元
-    gl.uniform1i(textureLocation, 0)
-
-    // 清除画布并绘制
-    gl.clear(gl.COLOR_BUFFER_BIT)
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-
-    // 将 WebGL 画布内容复制到目标画布
-    targetContext.drawImage(webglContext.gl.canvas, 0, 0)
-  }
-
-  videoFrame.close()
-}
-
 // 四宫格WebGL渲染设置
 function setupWebGLGridGrayscale(canvas: OffscreenCanvas): WebGLContext {
   const gl = canvas.getContext('webgl') as WebGLRenderingContext
@@ -436,72 +472,4 @@ function setupWebGLGridGrayscale(canvas: OffscreenCanvas): WebGLContext {
       }
     },
   }
-}
-
-function renderGridGrayscaleFrame(
-  webglContext: WebGLContext,
-  videoFrames: VideoFrame[],
-  width: number,
-  height: number,
-  targetCanvas: OffscreenCanvas,
-) {
-  const {
-    gl,
-    program,
-    positionLocation,
-    texCoordLocation,
-    textureLocations,
-    positionBuffer,
-    texCoordBuffer,
-    textures,
-  } = webglContext
-
-  const targetContext = targetCanvas.getContext('2d')
-
-  if (!targetContext) {
-    return
-  }
-
-  // 设置视口
-  gl.viewport(0, 0, width, height)
-
-  // 使用程序
-  gl.useProgram(program)
-
-  for (let i = 0; i < 4; i++) {
-    const texture = textures[i]
-    const textureLocation = textureLocations[i]
-
-    const videoFrame = videoFrames[i]
-    if (!texture || !textureLocation || !videoFrame) {
-      videoFrame?.close()
-      continue
-    }
-
-    gl.activeTexture(gl.TEXTURE0 + i)
-    gl.bindTexture(gl.TEXTURE_2D, texture)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoFrame)
-    videoFrame.close()
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.uniform1i(textureLocation, i)
-  }
-
-  // 设置顶点属性
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer)
-  gl.enableVertexAttribArray(positionLocation)
-  gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0)
-
-  gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer)
-  gl.enableVertexAttribArray(texCoordLocation)
-  gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0)
-
-  // 清除画布并绘制
-  gl.clear(gl.COLOR_BUFFER_BIT)
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-
-  // 将 WebGL 画布内容复制到目标画布
-  targetContext.drawImage(webglContext.gl.canvas, 0, 0)
 }

@@ -2,7 +2,6 @@
 import type { BenchmarkConfig, BenchmarkResult } from '~~/types'
 import { Combinator, MP4Clip, OffscreenSprite } from '@webav/av-cliper'
 import { GrayscaleClip } from '~/utils/grayscale-clip'
-import { GridGrayscaleClip } from '~/utils/grid-grayscale-clip'
 
 const isWebCodecsSupported = ref(false)
 const isRunning = ref(false)
@@ -161,39 +160,20 @@ async function runBenchmark(): Promise<BenchmarkResult> {
 
     const duration = (benchmarkConfig.value.maxFrames / benchmarkConfig.value.framerate) * 1000000
 
-    // 根据测试模式创建相应的 Clip
-    let processedClip
-    if (benchmarkConfig.value.testMode === 'grid-grayscale') {
-      // 四宫格模式需要 4 个视频
-      if (mp4Clips.length < 4) {
-        throw new Error('四宫格模式需要 4 个视频文件')
-      }
-      processedClip = new GridGrayscaleClip(
-        benchmarkConfig.value.width,
-        benchmarkConfig.value.height,
-        duration,
-        benchmarkConfig.value.framerate,
-        mp4Clips[0]!,
-        mp4Clips[1]!,
-        mp4Clips[2]!,
-        mp4Clips[3]!,
-      )
-    }
-    else {
-      // 灰度模式只需要 1 个视频
-      if (mp4Clips.length < 1) {
-        throw new Error('灰度模式需要 1 个视频文件')
-      }
-      processedClip = new GrayscaleClip(
-        benchmarkConfig.value.width,
-        benchmarkConfig.value.height,
-        duration,
-        benchmarkConfig.value.framerate,
-        mp4Clips[0]!,
-      )
+    // 验证视频文件数量
+    const requiredVideoCount = benchmarkConfig.value.testMode === 'grid-grayscale' ? 4 : 1
+    if (mp4Clips.length < requiredVideoCount) {
+      throw new Error(`${benchmarkConfig.value.testMode === 'grid-grayscale' ? '四宫格' : '灰度'}模式需要 ${requiredVideoCount} 个视频文件`)
     }
 
-    // 创建 Combinator
+    const grayscaleClip = new GrayscaleClip(
+      benchmarkConfig.value.width,
+      benchmarkConfig.value.height,
+      duration,
+      benchmarkConfig.value.framerate,
+      mp4Clips,
+    )
+
     const combinator = new Combinator({
       width: benchmarkConfig.value.width,
       height: benchmarkConfig.value.height,
@@ -213,8 +193,7 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       }
     })
 
-    // 使用处理后的 Clip
-    const sprite = new OffscreenSprite(processedClip)
+    const sprite = new OffscreenSprite(grayscaleClip)
     await sprite.ready
     sprite.time = { offset: 0, duration }
 
