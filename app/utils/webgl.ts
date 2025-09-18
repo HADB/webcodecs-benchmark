@@ -33,21 +33,14 @@ export class WebGLRenderer {
   /**
    * 渲染灰度帧
    * @param videoFrame 视频帧
-   * @param targetCanvas 目标画布
+   * @returns 渲染后的 WebGL canvas
    */
-  public renderGrayscaleFrame(videoFrame: VideoFrame, targetCanvas: OffscreenCanvas) {
+  public renderGrayscaleFrame(videoFrame: VideoFrame): OffscreenCanvas {
     if (!this.grayscaleContext) {
       throw new Error('WebGL context not initialized. Call initialize() first.')
     }
 
     const { gl, program, positionLocation, texCoordLocation, textureLocations, positionBuffer, texCoordBuffer, textures } = this.grayscaleContext
-
-    const targetContext = targetCanvas.getContext('2d')
-
-    if (!targetContext) {
-      videoFrame.close()
-      return
-    }
 
     // 设置视口
     gl.viewport(0, 0, this.currentWidth, this.currentHeight)
@@ -81,20 +74,20 @@ export class WebGLRenderer {
       // 清除画布并绘制
       gl.clear(gl.COLOR_BUFFER_BIT)
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
-
-      // 将 WebGL 画布内容复制到目标画布
-      targetContext.drawImage(this.grayscaleContext.gl.canvas, 0, 0)
     }
 
     videoFrame.close()
+
+    // 直接返回 WebGL canvas，避免昂贵的 drawImage 操作
+    return this.grayscaleContext.gl.canvas as OffscreenCanvas
   }
 
   /**
    * 渲染四宫格灰度帧
    * @param videoFrames 四个视频帧
-   * @param targetCanvas 目标画布
+   * @returns 渲染后的 WebGL canvas
    */
-  public renderGridGrayscaleFrame(videoFrames: VideoFrame[], targetCanvas: OffscreenCanvas) {
+  public renderGridGrayscaleFrame(videoFrames: VideoFrame[]): OffscreenCanvas {
     if (!this.gridGrayscaleContext) {
       throw new Error('WebGL context not initialized. Call initialize() first.')
     }
@@ -109,12 +102,6 @@ export class WebGLRenderer {
       texCoordBuffer,
       textures,
     } = this.gridGrayscaleContext
-
-    const targetContext = targetCanvas.getContext('2d')
-
-    if (!targetContext) {
-      return
-    }
 
     // 设置视口
     gl.viewport(0, 0, this.currentWidth, this.currentHeight)
@@ -156,8 +143,8 @@ export class WebGLRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
 
-    // 将 WebGL 画布内容复制到目标画布
-    targetContext.drawImage(this.gridGrayscaleContext.gl.canvas, 0, 0)
+    // 直接返回 WebGL canvas，避免昂贵的 drawImage 操作
+    return this.gridGrayscaleContext.gl.canvas as OffscreenCanvas
   }
 
   /**

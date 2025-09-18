@@ -7,7 +7,6 @@ export class GrayscaleClip implements IClip {
   #height: number
   #duration: number
   #framerate: number
-  #offscreenCanvas: OffscreenCanvas
   #clips: MP4Clip[]
   #renderer: WebGLRenderer
 
@@ -20,8 +19,6 @@ export class GrayscaleClip implements IClip {
     this.#duration = duration
     this.#framerate = framerate
     this.#clips = clips
-
-    this.#offscreenCanvas = new OffscreenCanvas(this.#width, this.#height)
 
     // 在构造函数中获取并初始化渲染器，避免每次tick时重复操作
     this.#renderer = getWebGLRenderer()
@@ -52,14 +49,15 @@ export class GrayscaleClip implements IClip {
 
     const videoFrames = results.map((result) => result.video!)
 
+    let renderedCanvas: OffscreenCanvas
     if (this.#clips.length === 1) {
-      this.#renderer.renderGrayscaleFrame(videoFrames[0]!, this.#offscreenCanvas)
+      renderedCanvas = this.#renderer.renderGrayscaleFrame(videoFrames[0]!)
     }
     else {
-      this.#renderer.renderGridGrayscaleFrame(videoFrames, this.#offscreenCanvas)
+      renderedCanvas = this.#renderer.renderGridGrayscaleFrame(videoFrames)
     }
 
-    const outputVideoFrame = new VideoFrame(this.#offscreenCanvas!, {
+    const outputVideoFrame = new VideoFrame(renderedCanvas, {
       timestamp: time,
       duration: 1000000 / this.#framerate, // 微秒为单位
     })

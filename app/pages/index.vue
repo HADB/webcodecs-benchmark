@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import type { BenchmarkConfig, BenchmarkResult, FrameCache } from '~~/types'
+import type { BenchmarkConfig, BenchmarkResult } from '~~/types'
 import { ALL_FORMATS, BlobSource, Input, Mp4OutputFormat, Output, StreamTarget, VideoSample, VideoSampleSink, VideoSampleSource } from 'mediabunny'
 import { cleanupGlobalRenderer, getWebGLRenderer } from '~/utils/webgl'
 
@@ -41,8 +41,6 @@ const selectedTestMode = ref<'grayscale' | 'grid-grayscale'>('grayscale')
 const uploadedVideos = ref<File[]>([])
 const uploadError = ref('')
 
-let frameCachePool: FrameCache[] = []
-
 const canStartTest = computed(() => {
   const requiredVideoCount = benchmarkConfig.value.testMode === 'grid-grayscale' ? 4 : 1
   return isWebCodecsSupported.value
@@ -51,35 +49,15 @@ const canStartTest = computed(() => {
     && uploadedVideos.value.length === requiredVideoCount
 })
 
-function cleanupFrameCache() {
-  // 清理帧缓存
-  frameCachePool = []
-
+function cleanupWebGLRenderer() {
   // 清理全局 WebGL 渲染器
   cleanupGlobalRenderer()
 }
 
-function initializeFrameCache() {
-  // 先清理现有的缓存
-  cleanupFrameCache()
-
-  const currentWidth = benchmarkConfig.value.width
-  const currentHeight = benchmarkConfig.value.height
-
+function initializeWebGLRenderer() {
   // 初始化全局 WebGL 渲染器
   const renderer = getWebGLRenderer()
-  renderer.initialize(currentWidth, currentHeight)
-
-  // 创建帧缓存池
-  for (let i = 0; i < frameQueueSize; i++) {
-    const canvas = new OffscreenCanvas(currentWidth, currentHeight)
-    frameCachePool.push({
-      canvas,
-      timestamp: 0,
-      duration: 0,
-      inUse: false,
-    })
-  }
+  renderer.initialize(benchmarkConfig.value.width, benchmarkConfig.value.height)
 }
 
 // 更新分辨率的函数
@@ -159,8 +137,8 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       format: new Mp4OutputFormat(),
     })
 
-    // 初始化帧缓存池
-    initializeFrameCache()
+    // 初始化 WebGL 渲染器
+    initializeWebGLRenderer()
 
     const videoSampleSource = new VideoSampleSource({
       codec: selectedCodec.value,
@@ -174,8 +152,19 @@ async function runBenchmark(): Promise<BenchmarkResult> {
 
     await output.start()
 
-    const frameQueue: FrameCache[] = []
+    const frameQueue: VideoSample[] = []
     let encodePromise: Promise<void> | null = null
+
+    // 队列空间可用的通知
+    let queueSpaceAvailable: (() => void) | null = null
+    const waitForQueueSpace = () => new Promise<void>((resolve) => {
+      if (frameQueue.length < frameQueueSize) {
+        resolve()
+      }
+      else {
+        queueSpaceAvailable = resolve
+      }
+    })
 
     // 编码器消费者函数
     const encodeConsumer = async () => {
@@ -187,18 +176,18 @@ async function runBenchmark(): Promise<BenchmarkResult> {
 
         const encodeStartTime = performance.now()
 
-        const frameCache = frameQueue.shift()!
-        const videoSample = new VideoSample(frameCache.canvas, {
-          timestamp: frameCache.timestamp,
-          duration: frameCache.duration,
-        })
+        const videoSample = frameQueue.shift()!
 
         await videoSampleSource.add(videoSample)
 
         videoSample.close()
 
-        // 释放帧缓存
-        frameCache.inUse = false
+        // 通知队列空间可用
+        if (queueSpaceAvailable && frameQueue.length < frameQueueSize) {
+          queueSpaceAvailable()
+          queueSpaceAvailable = null
+        }
+
         encodeTotalTime.value += performance.now() - encodeStartTime
         encodedFrames.value++
       }
@@ -225,17 +214,8 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       .map((sink) => sink.samples(0, benchmarkConfig.value.maxFrames / benchmarkConfig.value.framerate)[Symbol.asyncIterator]())
 
     while (decodedFrames.value < benchmarkConfig.value.maxFrames) {
-      // 等待队列有空间
-      while (frameQueue.length >= frameQueueSize) {
-        await new Promise((resolve) => setTimeout(resolve, 1))
-      }
-
-      // 获取可用的帧缓存
-      let frameCache = frameCachePool.find((cache) => !cache.inUse)
-      while (!frameCache) {
-        await new Promise((resolve) => setTimeout(resolve, 1))
-        frameCache = frameCachePool.find((cache) => !cache.inUse)
-      }
+      // 等待队列有空间 - 使用事件驱动
+      await waitForQueueSpace()
 
       // 解码
       const decodeStartTime = performance.now()
@@ -260,26 +240,28 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       const videoSamples = sampleResults.map((result) => result.value as VideoSample)
       const videoFrames = videoSamples.map((sample) => sample.toVideoFrame())
 
-      frameCache.inUse = true
-      frameCache.timestamp = decodedFrames.value * (1 / benchmarkConfig.value.framerate)
-      frameCache.duration = 1 / benchmarkConfig.value.framerate
-
       // 根据模式选择不同的渲染方式
       const renderStartTime = performance.now()
       const renderer = getWebGLRenderer()
 
+      let renderedCanvas: OffscreenCanvas
       if (isGridMode) {
         // 四宫格+灰度 WebGL 渲染
-        renderer.renderGridGrayscaleFrame(videoFrames, frameCache.canvas)
+        renderedCanvas = renderer.renderGridGrayscaleFrame(videoFrames)
       }
       else {
         // 灰度 WebGL 渲染
-        renderer.renderGrayscaleFrame(videoFrames[0]!, frameCache.canvas)
+        renderedCanvas = renderer.renderGrayscaleFrame(videoFrames[0]!)
       }
+
       renderTotalTime.value += performance.now() - renderStartTime
       videoSamples.forEach((sample) => sample.close())
+
       // 将处理好的帧信息加入队列
-      frameQueue.push(frameCache)
+      frameQueue.push(new VideoSample(renderedCanvas, {
+        timestamp: decodedFrames.value * (1 / benchmarkConfig.value.framerate),
+        duration: 1 / benchmarkConfig.value.framerate,
+      }))
 
       totalTime.value = performance.now() - startTime
       decodedFrames.value++
@@ -314,7 +296,7 @@ async function runBenchmark(): Promise<BenchmarkResult> {
     result.error = (error as Error).message
   }
   finally {
-    cleanupFrameCache()
+    cleanupWebGLRenderer()
   }
 
   return result
@@ -401,7 +383,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  cleanupFrameCache()
+  cleanupWebGLRenderer()
 })
 </script>
 

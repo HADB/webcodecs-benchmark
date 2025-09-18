@@ -41,10 +41,3 @@ export interface WebGLContext {
   textures: WebGLTexture[]
   cleanup: () => void
 }
-
-export interface FrameCache {
-  canvas: OffscreenCanvas
-  timestamp: number
-  duration: number
-  inUse: boolean
-}
