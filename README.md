@@ -32,8 +32,8 @@
 
 | 测试项        | FPS   |
 | ------------- | ----- |
-| MediaBunny    | 282.3 |
-| WebAV         | 286.5 |
+| MediaBunny    | 284.9 |
+| WebAV         | 303.2 |
 | ffmpeg 命令行 | 420.6 |
 
 #### NVIDIA RTX 3060 (Windows 10)
@@ -105,9 +105,9 @@ ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
 
 | 测试项        | FPS  |
 | ------------- | ---- |
-| MediaBunny    | 69.9 |
-| WebAV         | 88.2 |
-| ffmpeg 命令行 | 97.4 |
+| MediaBunny    | 87.8 |
+| WebAV         | 119.1 |
+| ffmpeg 命令行 | 113.0 |
 
 ### 前端启动命令
 
