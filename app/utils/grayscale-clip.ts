@@ -47,7 +47,7 @@ export class GrayscaleClip implements IClip {
 
     if (results.some((result) => result.state === 'done') || results.some((result) => !result.video)) {
       results.forEach((result) => result.video?.close())
-      return { state: 'done' }
+      return { state: 'success' }
     }
 
     const videoFrames = results.map((result) => result.video!)
