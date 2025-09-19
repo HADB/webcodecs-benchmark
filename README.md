@@ -24,8 +24,8 @@
 
 | 测试项        | FPS   |
 | ------------- | ----- |
-| MediaBunny    | 196.1 |
-| WebAV         | 164.8 |
+| MediaBunny    | 200.7 |
+| WebAV         | 189.3 |
 | ffmpeg 命令行 | 204.4 |
 
 #### NVIDIA RTX 2080Ti (Windows 11)
@@ -89,8 +89,8 @@ ffmpeg -i bbb_sunflower_1080p_30fps_part1.mp4 \
 
 | 测试项        | FPS  |
 | ------------- | ---- |
-| MediaBunny    | 55.4 |
-| WebAV         | 48.9 |
+| MediaBunny    | 55.9 |
+| WebAV         | 54.0 |
 | ffmpeg 命令行 | 56.0 |
 
 #### NVIDIA RTX 2080Ti (Windows 11)
