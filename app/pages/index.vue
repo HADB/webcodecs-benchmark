@@ -244,21 +244,23 @@ async function runBenchmark(): Promise<BenchmarkResult> {
       const renderStartTime = performance.now()
       const renderer = getWebGLRenderer()
 
-      let renderedCanvas: OffscreenCanvas
+      let renderedVideoFrame: VideoFrame
+      const timestamp = decodedFrames.value * (1e6 / benchmarkConfig.value.framerate)
+      const duration = 1e6 / benchmarkConfig.value.framerate
       if (isGridMode) {
         // 四宫格+灰度 WebGL 渲染
-        renderedCanvas = renderer.renderGridGrayscaleFrame(videoFrames)
+        renderedVideoFrame = renderer.renderGridGrayscaleFrame(videoFrames, timestamp, duration)
       }
       else {
         // 灰度 WebGL 渲染
-        renderedCanvas = renderer.renderGrayscaleFrame(videoFrames[0]!)
+        renderedVideoFrame = renderer.renderGrayscaleFrame(videoFrames[0]!, timestamp, duration)
       }
 
       renderTotalTime.value += performance.now() - renderStartTime
       videoSamples.forEach((sample) => sample.close())
 
       // 将处理好的帧信息加入队列
-      frameQueue.push(new VideoSample(renderedCanvas, {
+      frameQueue.push(new VideoSample(renderedVideoFrame, {
         timestamp: decodedFrames.value * (1 / benchmarkConfig.value.framerate),
         duration: 1 / benchmarkConfig.value.framerate,
       }))

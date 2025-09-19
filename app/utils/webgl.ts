@@ -33,9 +33,9 @@ export class WebGLRenderer {
   /**
    * 渲染灰度帧
    * @param videoFrame 视频帧
-   * @returns 渲染后的 WebGL canvas
+   * @returns 渲染后的 VideoFrame
    */
-  public renderGrayscaleFrame(videoFrame: VideoFrame): OffscreenCanvas {
+  public renderGrayscaleFrame(videoFrame: VideoFrame, timestamp: number, duration: number): VideoFrame {
     if (!this.grayscaleContext) {
       throw new Error('WebGL context not initialized. Call initialize() first.')
     }
@@ -78,16 +78,19 @@ export class WebGLRenderer {
 
     videoFrame.close()
 
-    // 直接返回 WebGL canvas，避免昂贵的 drawImage 操作
-    return this.grayscaleContext.gl.canvas as OffscreenCanvas
+    // 从 WebGL canvas 创建 VideoFrame
+    return new VideoFrame(this.grayscaleContext.gl.canvas as OffscreenCanvas, {
+      timestamp,
+      duration,
+    })
   }
 
   /**
    * 渲染四宫格灰度帧
    * @param videoFrames 四个视频帧
-   * @returns 渲染后的 WebGL canvas
+   * @returns 渲染后的 VideoFrame
    */
-  public renderGridGrayscaleFrame(videoFrames: VideoFrame[]): OffscreenCanvas {
+  public renderGridGrayscaleFrame(videoFrames: VideoFrame[], timestamp: number, duration: number): VideoFrame {
     if (!this.gridGrayscaleContext) {
       throw new Error('WebGL context not initialized. Call initialize() first.')
     }
@@ -143,8 +146,11 @@ export class WebGLRenderer {
     gl.clear(gl.COLOR_BUFFER_BIT)
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
 
-    // 直接返回 WebGL canvas，避免昂贵的 drawImage 操作
-    return this.gridGrayscaleContext.gl.canvas as OffscreenCanvas
+    // 从 WebGL canvas 创建 VideoFrame
+    return new VideoFrame(this.gridGrayscaleContext.gl.canvas as OffscreenCanvas, {
+      timestamp,
+      duration,
+    })
   }
 
   /**

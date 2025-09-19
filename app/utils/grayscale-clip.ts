@@ -28,18 +28,18 @@ export class GrayscaleClip implements IClip {
     this.ready = Promise.resolve(this.meta)
   }
 
-  async tick(time: number): Promise<{
+  async tick(timestamp: number): Promise<{
     video?: VideoFrame
     audio?: Float32Array[]
     state: 'success' | 'done'
   }> {
-    if (time >= this.#duration) {
+    if (timestamp >= this.#duration) {
       return { state: 'done' }
     }
 
     // 统一获取所有clips的结果
     const results = await Promise.all(
-      this.#clips.map((clip) => clip.tick(time)),
+      this.#clips.map((clip) => clip.tick(timestamp)),
     )
 
     if (results.some((result) => result.state === 'done') || results.some((result) => !result.video)) {
@@ -49,21 +49,17 @@ export class GrayscaleClip implements IClip {
 
     const videoFrames = results.map((result) => result.video!)
 
-    let renderedCanvas: OffscreenCanvas
+    let videoFrame: VideoFrame
+    const duration = 1000000 / this.#framerate // 微秒为单位
     if (this.#clips.length === 1) {
-      renderedCanvas = this.#renderer.renderGrayscaleFrame(videoFrames[0]!)
+      videoFrame = this.#renderer.renderGrayscaleFrame(videoFrames[0]!, timestamp, duration)
     }
     else {
-      renderedCanvas = this.#renderer.renderGridGrayscaleFrame(videoFrames)
+      videoFrame = this.#renderer.renderGridGrayscaleFrame(videoFrames, timestamp, duration)
     }
 
-    const outputVideoFrame = new VideoFrame(renderedCanvas, {
-      timestamp: time,
-      duration: 1000000 / this.#framerate, // 微秒为单位
-    })
-
     return {
-      video: outputVideoFrame,
+      video: videoFrame,
       state: 'success',
     }
   }
